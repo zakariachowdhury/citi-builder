@@ -271,7 +271,7 @@ function projectClosest(streets, x, y) {
   return best;
 }
 
-function stepVehicles(motion, vehicles, streets, dt, now) {
+function stepVehicles(motion, vehicles, streets, busStops, dt, now) {
   // prune motion entries for vehicles that no longer exist
   const valid = new Set(vehicles.map(v => v.id));
   for (const id of Array.from(motion.keys())) {
@@ -289,12 +289,35 @@ function stepVehicles(motion, vehicles, streets, dt, now) {
         dir: Math.random() < 0.5 ? 1 : -1,
         speed: isBus ? 40 + Math.random() * 50 : 70 + Math.random() * 90,
         pauseUntil: 0,
+        lastStopId: null,
+        lastStopAt: 0,
       };
       motion.set(v.id, m);
     }
     const s = streets.find(st => st.id === m.streetId);
     if (!s) { motion.delete(v.id); continue; }
     if (m.pauseUntil > now) continue;
+
+    // Bus stop check — buses pause briefly when within 30px of a stop.
+    // Cooldown of 8s per stop so they don't get stuck repeatedly pausing
+    // at the same one as they ease away.
+    if (v.kind === 'bus' && busStops.length > 0) {
+      const dx0 = s.x2 - s.x1, dy0 = s.y2 - s.y1;
+      const px = s.x1 + m.t * dx0;
+      const py = s.y1 + m.t * dy0;
+      for (const bs of busStops) {
+        if (Math.hypot(bs.x - px, bs.y - py) < 30) {
+          if (m.lastStopId !== bs.id || now - m.lastStopAt > 8000) {
+            m.pauseUntil = now + 1500 + Math.random() * 1500;
+            m.lastStopId = bs.id;
+            m.lastStopAt = now;
+            break;
+          }
+        }
+      }
+      if (m.pauseUntil > now) continue;
+    }
+
     if (Math.random() < 0.05 * dt) {
       m.pauseUntil = now + 500 + Math.random() * 2000;
       continue;
@@ -326,12 +349,174 @@ function stepVehicles(motion, vehicles, streets, dt, now) {
   }
 }
 
-function CityLife({ vehicles, streets }) {
+// ============ PEDESTRIANS ============
+const SKIN_COLORS = ['#f4d4b6','#e3b896','#c9956b','#9a6e4a','#7a4f30','#dab28e'];
+const SHIRT_COLORS = ['#3b6fb5','#d94c3a','#4f8b4a','#e7b94a','#8a5fb0','#de8348','#d97ba0','#5a8aa0'];
+
+function pickWaypoint(anchors) {
+  const a = anchors[Math.floor(Math.random() * anchors.length)];
+  if (!a) return null;
+  return {
+    x: a.x + (Math.random() - 0.5) * 70,
+    y: a.y + (Math.random() - 0.5) * 70,
+  };
+}
+
+function stepPedestrians(peds, anchors, dt, now) {
+  if (anchors.length < 2) { peds.length = 0; return; }
+  const TARGET = Math.min(14, Math.max(4, Math.floor(anchors.length * 0.7)));
+  while (peds.length < TARGET) {
+    const start = pickWaypoint(anchors);
+    const end = pickWaypoint(anchors);
+    if (!start || !end) break;
+    peds.push({
+      id: `p-${now.toFixed(0)}-${peds.length}-${Math.random().toString(36).slice(2,5)}`,
+      x: start.x, y: start.y,
+      tx: end.x, ty: end.y,
+      speed: 18 + Math.random() * 18,
+      skin: SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)],
+      shirt: SHIRT_COLORS[Math.floor(Math.random() * SHIRT_COLORS.length)],
+      stride: 0,
+      strideAt: now,
+      pauseUntil: 0,
+    });
+  }
+  if (peds.length > TARGET) peds.length = TARGET;
+
+  for (const p of peds) {
+    if (p.pauseUntil > now) continue;
+    if (Math.random() < 0.04 * dt) {
+      p.pauseUntil = now + 800 + Math.random() * 2200;
+      continue;
+    }
+    const dx = p.tx - p.x, dy = p.ty - p.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 4) {
+      const next = pickWaypoint(anchors);
+      if (next) { p.tx = next.x; p.ty = next.y; }
+      continue;
+    }
+    const step = Math.min(p.speed * dt, dist);
+    p.x += (dx / dist) * step;
+    p.y += (dy / dist) * step;
+    if (now - p.strideAt > 320) {
+      p.stride = p.stride ? 0 : 1;
+      p.strideAt = now;
+    }
+  }
+}
+
+function Person({ p }) {
+  const off = p.stride ? 0.6 : -0.6;
+  return (
+    <g transform={`translate(${p.x},${p.y})`}>
+      <circle cx="0" cy="-4" r="2.2" fill={p.skin} stroke="#2a2418" strokeWidth="0.4"/>
+      <rect x="-2" y="-2" width="4" height="5" rx="1" fill={p.shirt} stroke="#2a2418" strokeWidth="0.4"/>
+      <line x1="-1" y1="3" x2={-1 + off} y2="6" stroke="#2a2418" strokeWidth="0.9"/>
+      <line x1="1"  y1="3" x2={1 - off}  y2="6" stroke="#2a2418" strokeWidth="0.9"/>
+    </g>
+  );
+}
+
+// ============ FIRE TRUCK DISPATCH ============
+function stepFireTrucks(trucks, cooldownRef, fireDepts, streets, dt, now) {
+  cooldownRef.current -= dt;
+
+  if (cooldownRef.current <= 0 && fireDepts.length > 0 && streets.length > 0 && trucks.length < 2) {
+    const dept = fireDepts[Math.floor(Math.random() * fireDepts.length)];
+    const near = projectClosest(streets, dept.x, dept.y);
+    if (near && near.dist < 200) {
+      trucks.push({
+        id: `ft-${now.toFixed(0)}-${Math.random().toString(36).slice(2,5)}`,
+        streetId: near.street.id,
+        t: near.t,
+        dir: Math.random() < 0.5 ? 1 : -1,
+        speed: 110 + Math.random() * 50,
+        despawnAt: now + 12000 + Math.random() * 8000,
+        x: dept.x, y: dept.y,
+        rot: 0, flipX: false,
+        blink: true, blinkAt: now,
+      });
+    }
+    cooldownRef.current = 25 + Math.random() * 30;
+  }
+
+  for (let i = trucks.length - 1; i >= 0; i--) {
+    const t = trucks[i];
+    if (now > t.despawnAt) { trucks.splice(i, 1); continue; }
+    if (now - t.blinkAt > 240) { t.blink = !t.blink; t.blinkAt = now; }
+
+    const s = streets.find(st => st.id === t.streetId);
+    if (!s) { trucks.splice(i, 1); continue; }
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (len === 0) continue;
+    t.t += t.dir * (t.speed * dt) / len;
+
+    if (t.t > 1 || t.t < 0) {
+      const reachedEnd = t.t > 1 ? 2 : 1;
+      const cx = reachedEnd === 2 ? s.x2 : s.x1;
+      const cy = reachedEnd === 2 ? s.y2 : s.y1;
+      const conns = [];
+      for (const o of streets) {
+        if (o.id === s.id) continue;
+        if (Math.hypot(o.x1 - cx, o.y1 - cy) < 14) conns.push({ street: o, end: 1 });
+        if (Math.hypot(o.x2 - cx, o.y2 - cy) < 14) conns.push({ street: o, end: 2 });
+      }
+      if (conns.length > 0) {
+        const next = conns[Math.floor(Math.random() * conns.length)];
+        t.streetId = next.street.id;
+        t.dir = next.end === 1 ? 1 : -1;
+        t.t = next.end === 1 ? 0.001 : 0.999;
+      } else {
+        t.dir = -t.dir;
+        t.t = t.t > 1 ? 1 : 0;
+      }
+    }
+
+    const sNow = streets.find(st => st.id === t.streetId);
+    if (!sNow) continue;
+    const dx = sNow.x2 - sNow.x1, dy = sNow.y2 - sNow.y1;
+    const ll = Math.hypot(dx, dy) || 1;
+    const dirX = (t.dir > 0 ? dx : -dx) / ll;
+    const dirY = (t.dir > 0 ? dy : -dy) / ll;
+    const rx = -dirY, ry = dirX;
+    t.x = sNow.x1 + t.t * dx + rx * 9;
+    t.y = sNow.y1 + t.t * dy + ry * 9;
+    let rot = Math.atan2(dirY, dirX) * 180 / Math.PI;
+    let flipX = false;
+    if (rot > 90) { rot -= 180; flipX = true; }
+    else if (rot < -90) { rot += 180; flipX = true; }
+    t.rot = rot; t.flipX = flipX;
+  }
+}
+
+function FireTruck({ t }) {
+  const transform = `translate(${t.x},${t.y}) rotate(${t.rot})${t.flipX ? ' scale(-1,1)' : ''}`;
+  return (
+    <g transform={transform}>
+      {/* siren glow when on */}
+      {t.blink && <circle cx="0" cy="-7" r="9" fill="#ff3030" opacity="0.22"/>}
+      <rect x="-13" y="-5" width="26" height="10" rx="2" fill="#d94c3a" stroke="#2a2418" strokeWidth="1.5"/>
+      <rect x="-13" y="-5" width="7" height="10" fill="#fff" stroke="#2a2418" strokeWidth="1"/>
+      <rect x="-4" y="-3.5" width="6" height="3.5" fill="#a8d8e8" stroke="#2a2418" strokeWidth="0.5"/>
+      <line x1="-13" y1="0" x2="13" y2="0" stroke="#2a2418" strokeWidth="0.5" opacity="0.4"/>
+      <circle cx="-8" cy="6" r="2.2" fill="#2a2418" stroke="#2a2418" strokeWidth="0.4"/>
+      <circle cx="-8" cy="6" r="0.9" fill="#7a7060"/>
+      <circle cx="8"  cy="6" r="2.2" fill="#2a2418" stroke="#2a2418" strokeWidth="0.4"/>
+      <circle cx="8"  cy="6" r="0.9" fill="#7a7060"/>
+      <rect x="-2" y="-7" width="4" height="2" fill={t.blink ? '#ff3030' : '#660000'} stroke="#2a2418" strokeWidth="0.4"/>
+    </g>
+  );
+}
+
+function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts }) {
   const motionRef = useRef(new Map());
-  const vehiclesRef = useRef(vehicles);
-  const streetsRef = useRef(streets);
-  vehiclesRef.current = vehicles;
-  streetsRef.current = streets;
+  const pedRef = useRef([]);
+  const truckRef = useRef([]);
+  const truckCooldownRef = useRef(8); // first dispatch after 8s
+  // Keep latest props accessible from the RAF loop without re-subscribing.
+  const propsRef = useRef({});
+  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts };
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -340,16 +525,27 @@ function CityLife({ vehicles, streets }) {
     const loop = (now) => {
       const dt = Math.min(0.1, (now - lastT) / 1000);
       lastT = now;
-      stepVehicles(motionRef.current, vehiclesRef.current, streetsRef.current, dt, now);
+      const p = propsRef.current;
+      stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, dt, now);
+      stepPedestrians(pedRef.current, p.peopleSeeds, dt, now);
+      stepFireTrucks(truckRef.current, truckCooldownRef, p.fireDepts, p.streets, dt, now);
       setTick(t => (t + 1) & 0xFFFF);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); motionRef.current.clear(); };
+    return () => {
+      cancelAnimationFrame(raf);
+      motionRef.current.clear();
+      pedRef.current = [];
+      truckRef.current = [];
+    };
   }, []);
 
   return (
     <g pointerEvents="none">
+      {/* pedestrians (under vehicles so trucks don't disappear behind them) */}
+      {pedRef.current.map(p => <Person key={p.id} p={p}/>)}
+      {/* user-placed cars and buses */}
       {vehicles.map(v => {
         const m = motionRef.current.get(v.id);
         if (!m) return null;
@@ -357,17 +553,12 @@ function CityLife({ vehicles, streets }) {
         if (!s) return null;
         const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
         const len = Math.hypot(dx, dy) || 1;
-        // Position on centerline, then offset to the right side of travel
-        // so opposing-direction vehicles ride opposite sides of the road.
         const dirX = (m.dir > 0 ? dx : -dx) / len;
         const dirY = (m.dir > 0 ? dy : -dy) / len;
-        const rx = -dirY, ry = dirX; // perpendicular pointing right of travel
+        const rx = -dirY, ry = dirX;
         const offset = v.kind === 'bus' ? 11 : 9;
         const x = s.x1 + m.t * dx + rx * offset;
         const y = s.y1 + m.t * dy + ry * offset;
-        // Keep wheels on the ground: clamp rotation to [-90, 90] and mirror
-        // horizontally for the other half. A 180° rotation would otherwise
-        // flip the vehicle upside-down when it travels westward.
         let rot = Math.atan2(dirY, dirX) * 180 / Math.PI;
         let flipX = false;
         if (rot > 90) { rot -= 180; flipX = true; }
@@ -379,6 +570,8 @@ function CityLife({ vehicles, streets }) {
           </g>
         );
       })}
+      {/* dispatched fire trucks */}
+      {truckRef.current.map(t => <FireTruck key={t.id} t={t}/>)}
     </g>
   );
 }
@@ -842,11 +1035,14 @@ window.CityCanvas = function CityCanvas({
               />
             );
           })}
-          {/* Animated vehicles */}
+          {/* Animated vehicles, pedestrians, and dispatched fire trucks */}
           {liveMode && (
             <CityLife
               vehicles={state.buildings.filter(b => VEHICLE_KINDS.has(b.kind))}
               streets={state.streets}
+              busStops={state.buildings.filter(b => b.kind === 'busStop')}
+              peopleSeeds={state.buildings.filter(b => Buildings.REQUIRED.some(r => r.kind === b.kind))}
+              fireDepts={state.buildings.filter(b => b.kind === 'fire')}
             />
           )}
           {/* protractor overlay */}
