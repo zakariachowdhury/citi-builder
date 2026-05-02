@@ -88,6 +88,7 @@ function App() {
   const [zoomTick, setZoomTick] = useStateA(0);
   const [fitTick, setFitTick] = useStateA(0);
   const [helpOpen, setHelpOpen] = useStateA(false);
+  const [dispatches, setDispatches] = useStateA([]);
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
@@ -345,6 +346,44 @@ function App() {
 
   function printMap() { window.print(); }
 
+  // Click-to-dispatch: send a car driving from a random road to the building.
+  function dispatchCarTo(building) {
+    const RP = window.RoutePlanner;
+    if (!RP || !state.streets.length) {
+      showToast('Add some roads first');
+      return;
+    }
+    const dest = RP.projectClosest(state.streets, building.x, building.y);
+    if (!dest || dest.dist > 200) {
+      showToast('No road near that building');
+      return;
+    }
+    // Pick a random starting segment far enough away to feel like a journey.
+    let startSeg = state.streets[Math.floor(Math.random() * state.streets.length)];
+    for (let tries = 0; tries < 5; tries++) {
+      const cand = state.streets[Math.floor(Math.random() * state.streets.length)];
+      const cx = (cand.x1 + cand.x2) / 2, cy = (cand.y1 + cand.y2) / 2;
+      if (Math.hypot(cx - building.x, cy - building.y) > 200) { startSeg = cand; break; }
+    }
+    const path = RP.findRoutePath(state.streets, startSeg.id, dest.street.id);
+    if (!path) {
+      showToast('No road route to that building');
+      return;
+    }
+    const startT = Math.random();
+    const segs = RP.precomputeRouteSegments(path, startT, dest.t);
+    setDispatches(prev => [...prev, {
+      id: `disp-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+      path: segs,
+      destX: building.x, destY: building.y,
+      variant: Math.floor(Math.random() * 9),
+    }]);
+    showToast(`🚕 Car heading to ${building.label || building.kind}`);
+  }
+  function clearDispatch(id) {
+    setDispatches(prev => prev.filter(d => d.id !== id));
+  }
+
   function exportJSON() {
     const data = {
       version: 1,
@@ -439,6 +478,9 @@ function App() {
           liveMode={liveMode}
           soundOn={soundOn}
           weather={weather}
+          dispatches={dispatches}
+          onDispatch={dispatchCarTo}
+          onDispatchDone={clearDispatch}
         />
 
         {/* Title bar overlay */}
@@ -472,6 +514,11 @@ function App() {
           <button className={`tool-btn ${tool === 'eraser' ? 'active' : ''}`}
                   onClick={() => setTool(tool === 'eraser' ? 'select' : 'eraser')} title="Eraser">
             🧽
+          </button>
+          <button className={`tool-btn ${tool === 'dispatch' ? 'active' : ''}`}
+                  onClick={() => setTool(tool === 'dispatch' ? 'select' : 'dispatch')}
+                  title="Send a car: pick this tool, then click any building">
+            🚕
           </button>
           <span className="tool-sep"/>
           <button className="tool-btn" onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)">

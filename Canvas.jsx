@@ -659,6 +659,80 @@ function Person({ p }) {
   );
 }
 
+// ============ ROUTE PLANNING (BFS over road-segment adjacency) ============
+// Two segments are connected if they share an endpoint within 14 px (same
+// tolerance the random-walk vehicles use). Returns array of step objects:
+//   [{ id, enterEnd, exitEnd }, ...]   — null if no route.
+function buildSegmentAdjacency(streets) {
+  const adj = new Map();
+  for (const s of streets) adj.set(s.id, []);
+  for (let i = 0; i < streets.length; i++) {
+    for (let j = i + 1; j < streets.length; j++) {
+      const a = streets[i], b = streets[j];
+      const tries = [
+        [a.x1, a.y1, 1, b.x1, b.y1, 1],
+        [a.x1, a.y1, 1, b.x2, b.y2, 2],
+        [a.x2, a.y2, 2, b.x1, b.y1, 1],
+        [a.x2, a.y2, 2, b.x2, b.y2, 2],
+      ];
+      for (const [ax, ay, aend, bx, by, bend] of tries) {
+        if (Math.hypot(ax - bx, ay - by) < 14) {
+          adj.get(a.id).push({ otherId: b.id, myEnd: aend, otherEnd: bend });
+          adj.get(b.id).push({ otherId: a.id, myEnd: bend, otherEnd: aend });
+          break;
+        }
+      }
+    }
+  }
+  return adj;
+}
+function findRoutePath(streets, startSegId, endSegId) {
+  if (startSegId === endSegId) return [{ id: startSegId, enterEnd: null, exitEnd: null }];
+  const adj = buildSegmentAdjacency(streets);
+  const prev = new Map(); // segId -> { fromId, enterEnd (this side), exitEnd (from-side) }
+  prev.set(startSegId, null);
+  const queue = [startSegId];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur === endSegId) break;
+    for (const conn of adj.get(cur) || []) {
+      if (prev.has(conn.otherId)) continue;
+      prev.set(conn.otherId, { fromId: cur, enterEnd: conn.otherEnd, exitEndOfFrom: conn.myEnd });
+      queue.push(conn.otherId);
+    }
+  }
+  if (!prev.has(endSegId)) return null;
+  // Reconstruct path
+  const reverse = [{ id: endSegId, enterEnd: prev.get(endSegId)?.enterEnd ?? null, exitEnd: null }];
+  let cur = endSegId;
+  while (prev.get(cur)) {
+    const step = prev.get(cur);
+    const fromInfo = prev.get(step.fromId);
+    reverse.push({
+      id: step.fromId,
+      enterEnd: fromInfo ? fromInfo.enterEnd : null,
+      exitEnd: step.exitEndOfFrom,
+    });
+    cur = step.fromId;
+  }
+  return reverse.reverse();
+}
+// Expose for app-main.jsx (which doesn't share module scope here).
+window.RoutePlanner = {
+  findRoutePath: (...a) => findRoutePath(...a),
+  precomputeRouteSegments: (...a) => precomputeRouteSegments(...a),
+  projectClosest: (...a) => projectClosest(...a),
+};
+function precomputeRouteSegments(path, startT, endT) {
+  // Returns [{ streetId, fromT, toT, dir }] ready to drive along.
+  return path.map((p, i) => {
+    const isFirst = i === 0, isLast = i === path.length - 1;
+    const fromT = isFirst ? startT : (p.enterEnd === 1 ? 0 : 1);
+    const toT   = isLast  ? endT   : (p.exitEnd  === 1 ? 0 : 1);
+    return { streetId: p.id, fromT, toT, dir: toT >= fromT ? 1 : -1 };
+  });
+}
+
 // ============ EMERGENCY DISPATCH (fire trucks, police cars) ============
 const FIRE_CFG = {
   kind: 'firetruck', cap: 1,
@@ -858,16 +932,59 @@ function TrafficLight({ x, y, phase }) {
   );
 }
 
-function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, trafficLights, soundOn }) {
+// ============ DIRECTED CARS (click-to-dispatch) ============
+function stepDirectedCars(cars, streets, occupancy, dt, now, onArrived) {
+  for (let i = cars.length - 1; i >= 0; i--) {
+    const c = cars[i];
+    if (c.idx >= c.path.length) {
+      if (now > c.holdUntil) { onArrived && onArrived(c.id); cars.splice(i, 1); }
+      continue;
+    }
+    const seg = c.path[c.idx];
+    const s = streets.find(st => st.id === seg.streetId);
+    if (!s) { onArrived && onArrived(c.id); cars.splice(i, 1); continue; }
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (len === 0) { c.idx++; continue; }
+
+    // Car-following: edge-to-edge gap on this segment in this direction.
+    let speedScale = 1;
+    if (occupancy) {
+      const gap = closestAheadGap(occupancy, c.id, { streetId: seg.streetId, t: c.t, dir: seg.dir }, len, 11);
+      if (gap < FOLLOW_STOP_GAP) continue;
+      if (gap < FOLLOW_SLOW_GAP) {
+        speedScale = (gap - FOLLOW_STOP_GAP) / (FOLLOW_SLOW_GAP - FOLLOW_STOP_GAP);
+        if (speedScale < 0.2) speedScale = 0.2;
+      }
+    }
+
+    c.t += seg.dir * (c.speed * speedScale * dt) / len;
+
+    // Reached this segment's exit?
+    const reached = seg.dir > 0 ? c.t >= seg.toT : c.t <= seg.toT;
+    if (reached) {
+      c.idx++;
+      if (c.idx < c.path.length) {
+        c.t = c.path[c.idx].fromT;
+      } else {
+        c.t = seg.toT;
+        c.holdUntil = now + 1500; // brief pause at destination before despawn
+      }
+    }
+  }
+}
+
+function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, trafficLights, soundOn, dispatches, onDispatchDone }) {
   const motionRef = useRef(new Map());
   const pedRef = useRef([]);
   const fireTrucksRef = useRef([]);
   const policeCarsRef = useRef([]);
+  const directedRef = useRef([]);
+  const seenDispatchIdsRef = useRef(new Set());
   const fireCooldownRef = useRef(45);   // first fire dispatch after 45s
   const policeCooldownRef = useRef(35); // first police patrol after 35s
   // Keep latest props accessible from the RAF loop without re-subscribing.
   const propsRef = useRef({});
-  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, soundOn };
+  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, soundOn, dispatches, onDispatchDone };
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -881,7 +998,32 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
       const lInfo = p.lightInfo ? { ...p.lightInfo, phase } : null;
       // Snapshot road occupants BEFORE stepping so collision checks see a
       // consistent view this frame (same-side-same-direction following).
+      // Pull in any new dispatch requests that arrived since last frame.
+      if (p.dispatches && p.dispatches.length) {
+        for (const d of p.dispatches) {
+          if (!seenDispatchIdsRef.current.has(d.id)) {
+            seenDispatchIdsRef.current.add(d.id);
+            directedRef.current.push({
+              id: d.id,
+              path: d.path,
+              t: d.path[0].fromT,
+              idx: 0,
+              speed: 100 + Math.random() * 50,
+              variant: d.variant,
+              destX: d.destX, destY: d.destY,
+              holdUntil: 0,
+            });
+          }
+        }
+      }
       const occ = buildOccupancy(motionRef.current, p.vehicles, fireTrucksRef.current, policeCarsRef.current);
+      // Treat directed cars as occupants too so others queue behind them.
+      for (const c of directedRef.current) {
+        if (c.idx < c.path.length) {
+          const seg = c.path[c.idx];
+          occ.push({ id: c.id, streetId: seg.streetId, t: c.t, dir: seg.dir, halfLen: 11 });
+        }
+      }
       const sound = p.soundOn ? (kind => {
         if (kind === 'fire') playFireSiren();
         else if (kind === 'police') playPoliceSiren();
@@ -891,6 +1033,7 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
       stepPedestrians(pedRef.current, p.peopleSeeds, p.streets, dt, now);
       stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, sound, dt, now, FIRE_CFG);
       stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, sound, dt, now, POLICE_CFG);
+      stepDirectedCars(directedRef.current, p.streets, occ, dt, now, p.onDispatchDone);
       setTick(t => (t + 1) & 0xFFFF);
       raf = requestAnimationFrame(loop);
     };
@@ -901,6 +1044,8 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
       pedRef.current = [];
       fireTrucksRef.current = [];
       policeCarsRef.current = [];
+      directedRef.current = [];
+      seenDispatchIdsRef.current = new Set();
     };
   }, []);
 
@@ -938,6 +1083,36 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
       {/* dispatched fire trucks + police cars */}
       {fireTrucksRef.current.map(t => <DispatchedVehicle key={t.id} d={t}/>)}
       {policeCarsRef.current.map(t => <DispatchedVehicle key={t.id} d={t}/>)}
+      {/* directed (click-dispatched) cars + their destination pins */}
+      {directedRef.current.map(c => {
+        if (c.idx >= c.path.length) return null;
+        const seg = c.path[c.idx];
+        const s = streets.find(st => st.id === seg.streetId);
+        if (!s) return null;
+        const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const dirX = (seg.dir > 0 ? dx : -dx) / len;
+        const dirY = (seg.dir > 0 ? dy : -dy) / len;
+        const rx = -dirY, ry = dirX;
+        const x = s.x1 + c.t * dx + rx * 9;
+        const y = s.y1 + c.t * dy + ry * 9;
+        let rot = Math.atan2(dirY, dirX) * 180 / Math.PI;
+        let flipX = false;
+        if (rot > 90) { rot -= 180; flipX = true; }
+        else if (rot < -90) { rot += 180; flipX = true; }
+        const transform = `translate(${x},${y}) rotate(${rot})${flipX ? ' scale(-1,1)' : ''}`;
+        return (
+          <g key={c.id} transform={transform}>
+            <VehicleVisual kind="car" variant={c.variant}/>
+          </g>
+        );
+      })}
+      {directedRef.current.map(c => (
+        <g key={`pin-${c.id}`} transform={`translate(${c.destX},${c.destY - 28})`} pointerEvents="none">
+          <path d="M 0 0 q 9 -10 0 -22 q -9 12 0 22 z" fill="#d94c3a" stroke="#2a2418" strokeWidth="1.2"/>
+          <circle cx="0" cy="-14" r="3" fill="#fff" stroke="#2a2418" strokeWidth="1"/>
+        </g>
+      ))}
       {/* traffic lights at right-angle intersections */}
       {trafficLights && trafficLights.map((t, i) => (
         <TrafficLight key={`tl-${i}`} x={t.x} y={t.y} phase={phase}/>
@@ -968,6 +1143,9 @@ window.CityCanvas = function CityCanvas({
   liveMode, // when true, cars/buses animate along the road network
   soundOn,  // when true, dispatch sirens + bus stop ding play
   weather,  // 'clear' | 'rain' | 'snow'
+  dispatches,        // active click-dispatched cars
+  onDispatch,        // (building) => create a dispatch entry
+  onDispatchDone,    // (id) => remove the dispatch entry once arrived
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -1278,6 +1456,10 @@ window.CityCanvas = function CityCanvas({
       setState(st => ({ ...st, buildings: st.buildings.filter(x => x.id !== b.id) }));
       return;
     }
+    if (tool === 'dispatch' && onDispatch) {
+      onDispatch(b);
+      return;
+    }
     if (tool !== 'pan' && tool !== 'draw') {
       bumpHistory();
       const p = toWorld(e.clientX, e.clientY);
@@ -1341,6 +1523,7 @@ window.CityCanvas = function CityCanvas({
   // Cursor for draw tool
   const cursor = tool === 'draw' ? 'crosshair'
               : tool === 'pan' ? (isPanning ? 'grabbing' : 'grab')
+              : tool === 'dispatch' ? 'crosshair'
               : 'default';
 
   return (
@@ -1467,6 +1650,8 @@ window.CityCanvas = function CityCanvas({
               lightInfo={{ byStreet: lightData.byStreet }}
               trafficLights={lightData.lights}
               soundOn={soundOn}
+              dispatches={dispatches}
+              onDispatchDone={onDispatchDone}
             />
           )}
           {/* protractor overlay */}
