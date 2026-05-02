@@ -1,18 +1,45 @@
 // Sidebar.jsx — left palette + right rubric
 const { useState: useStateS } = React;
 
+function PaletteItem({ b, placed, armed, onPaletteDragStart, onArmKind }) {
+  return (
+    <div
+      className={`palette-item ${b.required ? 'required' : ''} ${placed ? 'placed' : ''} ${armed ? 'armed' : ''}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/building', b.kind);
+        e.dataTransfer.effectAllowed = 'copy';
+        onPaletteDragStart && onPaletteDragStart(b.kind);
+      }}
+      onClick={(e) => { e.stopPropagation(); onArmKind && onArmKind(b.kind); }}
+      title={(b.hint || b.label) + ' — drag onto map, or tap then tap the map'}
+    >
+      <svg className="ic" viewBox={`-${b.size/2 + 4} -${b.size/2 + 4} ${b.size + 8} ${b.size + 8}`}
+           width="46" height="46">
+        <g dangerouslySetInnerHTML={{ __html: b.draw(0) }}/>
+      </svg>
+      <div className="lbl">{b.label}</div>
+    </div>
+  );
+}
+
 window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onPickPattern, onPickFinalProject, onClearAll, armedKind, onArmKind }) {
-  const [tab, setTab] = useStateS('required');
   const placedKinds = new Set(state.buildings.map(b => b.kind));
 
-  const items = tab === 'required' ? Buildings.REQUIRED
-              : tab === 'decor'    ? Buildings.DECOR
-              : [];
+  // Bucket every building (required + decor) by its `group` field so we can
+  // render groups stacked without tabs.
+  const byGroup = new Map();
+  for (const g of Buildings.GROUPS) byGroup.set(g.id, []);
+  for (const b of Buildings.ALL) {
+    const g = b.group || 'landmarks';
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(b);
+  }
 
   return (
     <div className="panel" style={{ gridColumn: 1, gridRow: 1 }}>
       <h2>🏗️ City Builder</h2>
-      <div className="brand-sub">Drag buildings onto the map →</div>
+      <div className="brand-sub">Drag onto the map · or tap to arm, then tap →</div>
 
       <h3>Pick a street pattern</h3>
       <div className="pattern-grid">
@@ -39,41 +66,25 @@ window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onP
         ))}
       </div>
 
-      <h3>Buildings &amp; decorations</h3>
-      <div className="section-tabs">
-        <button className={tab==='required' ? 'active' : ''} onClick={() => setTab('required')}>
-          Required
-        </button>
-        <button className={tab==='decor' ? 'active' : ''} onClick={() => setTab('decor')}>
-          Decor
-        </button>
-      </div>
-
-      <div className="palette">
-        {items.map(b => {
-          const placed = placedKinds.has(b.kind) && !b.stackable;
-          return (
-            <div
-              key={b.kind}
-              className={`palette-item ${b.required ? 'required' : ''} ${placed ? 'placed' : ''} ${armedKind === b.kind ? 'armed' : ''}`}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('text/building', b.kind);
-                e.dataTransfer.effectAllowed = 'copy';
-                onPaletteDragStart && onPaletteDragStart(b.kind);
-              }}
-              onClick={(e) => { e.stopPropagation(); onArmKind && onArmKind(b.kind); }}
-              title={(b.hint || b.label) + ' — drag onto map, or tap then tap the map'}
-            >
-              <svg className="ic" viewBox={`-${b.size/2 + 4} -${b.size/2 + 4} ${b.size + 8} ${b.size + 8}`}
-                   width="46" height="46">
-                <g dangerouslySetInnerHTML={{ __html: b.draw(0) }}/>
-              </svg>
-              <div className="lbl">{b.label}</div>
+      {Buildings.GROUPS.map(g => {
+        const items = byGroup.get(g.id) || [];
+        if (!items.length) return null;
+        return (
+          <div key={g.id}>
+            <h3>{g.emoji} {g.label}</h3>
+            <div className="palette">
+              {items.map(b => (
+                <PaletteItem key={b.kind}
+                  b={b}
+                  placed={placedKinds.has(b.kind)}
+                  armed={armedKind === b.kind}
+                  onPaletteDragStart={onPaletteDragStart}
+                  onArmKind={onArmKind}/>
+              ))}
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
 
       <button
         onClick={onClearAll}

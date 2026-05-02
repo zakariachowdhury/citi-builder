@@ -475,10 +475,12 @@ button { font-family: var(--hand); cursor: pointer; }
 }
 .palette-item:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 rgba(42,36,24,0.25); }
 .palette-item:active { cursor: grabbing; }
-.palette-item.placed { opacity: 0.45; }
+/* "Placed" items stay fully clickable so users can add more — only show
+   a small green check in the corner so they know one already exists. */
 .palette-item.placed::after {
   content: '✓'; position: absolute; top: 2px; right: 6px;
-  color: var(--crayon-green); font-weight: 700; font-size: 18px;
+  color: var(--crayon-green); font-weight: 700; font-size: 16px;
+  text-shadow: 0 0 2px rgba(255,255,255,0.7);
 }
 .palette-item .ic { display: block; margin: 0 auto 2px; }
 .palette-item .lbl { display: block; line-height: 1.05; }
