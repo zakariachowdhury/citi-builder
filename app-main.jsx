@@ -536,10 +536,28 @@ function App() {
     }
     const startT = Math.random();
     const segs = RP.precomputeRouteSegments(path, startT, dest.t);
+    // Compute a "park spot" along the building's driveway so the car can
+    // exit the road and stop right outside the building. Same geometry as
+    // the visual driveway layer in Canvas.
+    const def = Buildings.getDef(building.kind);
+    const half = def ? def.size / 2 : 22;
+    let approachTarget = null;
+    if (dest.dist >= half + 22 && dest.dist <= half + 110) {
+      const dx = building.x - (dest.street.x1 + dest.t * (dest.street.x2 - dest.street.x1));
+      const dy = building.y - (dest.street.y1 + dest.t * (dest.street.y2 - dest.street.y1));
+      const d = Math.hypot(dx, dy);
+      if (d > 0) {
+        approachTarget = {
+          x: building.x - (dx / d) * (half + 14),
+          y: building.y - (dy / d) * (half + 14),
+        };
+      }
+    }
     setDispatches(prev => [...prev, {
       id: `disp-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       path: segs,
       destX: building.x, destY: building.y,
+      approachTarget,
       variant: Math.floor(Math.random() * 9),
     }]);
     showToast(`🚕 Car heading to ${building.label || building.kind}`);

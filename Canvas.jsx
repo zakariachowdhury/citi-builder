@@ -1138,6 +1138,29 @@ function stepDirectedCars(cars, streets, occupancy, dt, now, onArrived) {
   for (let i = cars.length - 1; i >= 0; i--) {
     const c = cars[i];
     if (c.idx >= c.path.length) {
+      // Off-road approach: drive from the road exit point onto the
+      // driveway toward the building's park spot.
+      if (c.approachTarget && !c.approachDone) {
+        const dx = c.approachTarget.x - c.x;
+        const dy = c.approachTarget.y - c.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 3) {
+          c.approachDone = true;
+          c.holdUntil = now + 1500;
+        } else {
+          const step = Math.min(c.speed * 0.6 * dt, dist);
+          c.x += (dx / dist) * step;
+          c.y += (dy / dist) * step;
+          // Update rotation so the car points where it's going.
+          const ux = dx / dist, uy = dy / dist;
+          let rot = Math.atan2(uy, ux) * 180 / Math.PI;
+          let flipX = false;
+          if (rot > 90) { rot -= 180; flipX = true; }
+          else if (rot < -90) { rot += 180; flipX = true; }
+          c.approachRot = rot; c.approachFlipX = flipX;
+        }
+        continue;
+      }
       if (now > c.holdUntil) { onArrived && onArrived(c.id); cars.splice(i, 1); }
       continue;
     }
@@ -1212,6 +1235,9 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
               speed: 100 + Math.random() * 50,
               variant: d.variant,
               destX: d.destX, destY: d.destY,
+              approachTarget: d.approachTarget || null,
+              approachDone: false,
+              x: 0, y: 0,
               holdUntil: 0,
             });
           }
@@ -1286,7 +1312,25 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
       {policeCarsRef.current.map(t => <DispatchedVehicle key={t.id} d={t}/>)}
       {/* directed (click-dispatched) cars + their destination pins */}
       {directedRef.current.map(c => {
-        if (c.idx >= c.path.length) return null;
+        // Past path → approach phase or parked
+        if (c.idx >= c.path.length) {
+          if (c.approachTarget && !c.approachDone) {
+            const rot = c.approachRot ?? 0;
+            const flipX = c.approachFlipX ?? false;
+            const transform = `translate(${c.x},${c.y}) rotate(${rot})${flipX ? ' scale(-1,1)' : ''}`;
+            return (
+              <g key={c.id} transform={transform}>
+                <VehicleVisual kind="car" variant={c.variant}/>
+              </g>
+            );
+          }
+          // Parked at the building — render at last known position
+          return (
+            <g key={c.id} transform={`translate(${c.x},${c.y}) rotate(${c.approachRot ?? 0})${c.approachFlipX ? ' scale(-1,1)' : ''}`}>
+              <VehicleVisual kind="car" variant={c.variant}/>
+            </g>
+          );
+        }
         const seg = c.path[c.idx];
         const s = streets.find(st => st.id === seg.streetId);
         if (!s) return null;
@@ -1301,6 +1345,8 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
         let flipX = false;
         if (rot > 90) { rot -= 180; flipX = true; }
         else if (rot < -90) { rot += 180; flipX = true; }
+        // Cache last on-road position so the approach phase has a starting point.
+        c.x = x; c.y = y;
         const transform = `translate(${x},${y}) rotate(${rot})${flipX ? ' scale(-1,1)' : ''}`;
         return (
           <g key={c.id} transform={transform}>
@@ -1366,6 +1412,44 @@ window.CityCanvas = function CityCanvas({
   const [contextMenu, setContextMenu] = useState(null); // {x, y, target: {kind, id}}
 
   const intersections = useMemo(() => Geom.findIntersections(state.streets), [state.streets]);
+
+  // Visual driveways: a short asphalt stub from each substantial building's
+  // edge to the nearest road centerline. Purely decorative — they aren't in
+  // state.streets, don't affect rubric/intersections/labels, and the road
+  // network's adjacency is unchanged. Click-dispatched cars use the driveway
+  // end as their park spot during the approach phase.
+  const driveways = useMemo(() => {
+    const list = [];
+    const SKIP = new Set(['tree','flower','bench','mailbox','streetlight',
+                          'busStop','fountain','car','bus']);
+    for (const b of state.buildings) {
+      if (SKIP.has(b.kind)) continue;
+      const def = Buildings.getDef(b.kind);
+      if (!def) continue;
+      const half = def.size / 2;
+      const near = projectClosest(state.streets, b.x, b.y);
+      if (!near) continue;
+      // Skip if too close (building practically on road) or too far.
+      if (near.dist < half + 22 || near.dist > half + 110) continue;
+      const dx = b.x - (near.street.x1 + near.t * (near.street.x2 - near.street.x1));
+      const dy = b.y - (near.street.y1 + near.t * (near.street.y2 - near.street.y1));
+      const ux = dx / near.dist, uy = dy / near.dist;
+      const startX = b.x - ux * near.dist; // at road centerline
+      const startY = b.y - uy * near.dist;
+      const endX = b.x - ux * (half + 2);  // at building edge
+      const endY = b.y - uy * (half + 2);
+      list.push({
+        id: `dw-${b.id}`,
+        buildingId: b.id,
+        startX, startY, endX, endY,
+        // park spot: a hair before the building edge so the car body fits
+        parkX: b.x - ux * (half + 14),
+        parkY: b.y - uy * (half + 14),
+        rot: Math.atan2(uy, ux) * 180 / Math.PI,
+      });
+    }
+    return list;
+  }, [state.buildings, state.streets]);
 
   // Traffic-light geometry: per right-angle intersection, the parametric
   // position on each crossing street so vehicles can detect "intersection
@@ -1934,6 +2018,23 @@ window.CityCanvas = function CityCanvas({
             }}
             hoverEndpoint={hoverEndpoint}
           />
+          {/* visual driveways: thin asphalt stubs from buildings to nearest road */}
+          <g>
+            {driveways.map(d => (
+              <line key={`dw-b-${d.id}`}
+                x1={d.startX} y1={d.startY} x2={d.endX} y2={d.endY}
+                stroke="#9a9a9a" strokeWidth="20" strokeLinecap="round"
+                pointerEvents="none"/>
+            ))}
+          </g>
+          <g>
+            {driveways.map(d => (
+              <line key={`dw-f-${d.id}`}
+                x1={d.startX} y1={d.startY} x2={d.endX} y2={d.endY}
+                stroke="#dcdcdc" strokeWidth="14" strokeLinecap="round"
+                pointerEvents="none"/>
+            ))}
+          </g>
           {/* crosswalks at right-angle intersections */}
           <Crosswalks
             items={intersections.filter(it => it.type === 'right')}
