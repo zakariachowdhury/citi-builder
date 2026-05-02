@@ -296,8 +296,8 @@ function playFireSiren() {
   osc.frequency.linearRampToValueAtTime(940, t0 + 1.35);
   osc.frequency.linearRampToValueAtTime(620, t0 + 1.8);
   gain.gain.setValueAtTime(0, t0);
-  gain.gain.linearRampToValueAtTime(0.07, t0 + 0.05);
-  gain.gain.setValueAtTime(0.07, t0 + 1.7);
+  gain.gain.linearRampToValueAtTime(0.025, t0 + 0.08);
+  gain.gain.setValueAtTime(0.025, t0 + 1.7);
   gain.gain.linearRampToValueAtTime(0, t0 + 1.9);
   osc.connect(gain).connect(ctx.destination);
   osc.start(t0); osc.stop(t0 + 2);
@@ -313,8 +313,8 @@ function playPoliceSiren() {
     osc.frequency.setValueAtTime(940, t0 + i * 0.3 + 0.15);
   }
   gain.gain.setValueAtTime(0, t0);
-  gain.gain.linearRampToValueAtTime(0.06, t0 + 0.05);
-  gain.gain.setValueAtTime(0.06, t0 + 1.7);
+  gain.gain.linearRampToValueAtTime(0.022, t0 + 0.08);
+  gain.gain.setValueAtTime(0.022, t0 + 1.7);
   gain.gain.linearRampToValueAtTime(0, t0 + 1.85);
   osc.connect(gain).connect(ctx.destination);
   osc.start(t0); osc.stop(t0 + 1.9);

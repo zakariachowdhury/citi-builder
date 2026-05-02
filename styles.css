@@ -165,6 +165,51 @@ button { font-family: var(--hand); cursor: pointer; }
   user-select: none;
 }
 
+/* City stats chip — top-center of canvas */
+.stats-chip {
+  position: absolute; top: 16px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 14px;
+  background: rgba(255,255,255,0.95);
+  padding: 5px 14px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(42,36,24,0.3);
+  box-shadow: 2px 2px 0 rgba(42,36,24,0.15);
+  font-family: var(--hand);
+  font-size: 14px;
+  color: var(--ink);
+  z-index: 9;
+  white-space: nowrap;
+  user-select: none;
+}
+.stats-chip span { font-feature-settings: "tnum"; }
+
+/* Shortcut list inside the help modal */
+.shortcut-list {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 4px 0 18px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.shortcut-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(42,36,24,0.12);
+}
+.shortcut-row:last-child { border-bottom: none; }
+.shortcut-row > span:first-child { color: var(--ink); }
+.shortcut-row kbd {
+  background: var(--paper);
+  border: 1px solid rgba(42,36,24,0.4);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--hand);
+  font-size: 13px;
+  margin: 0 1px;
+}
+
 /* Toolbar (top-right of canvas) */
 .toolbar {
   position: absolute; top: 14px; right: 14px;

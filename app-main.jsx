@@ -84,6 +84,7 @@ function App() {
   const [confirmDialog, setConfirmDialog] = useStateA(null); // { title, message, confirmLabel, danger, onConfirm }
   const [zoomTick, setZoomTick] = useStateA(0);
   const [fitTick, setFitTick] = useStateA(0);
+  const [helpOpen, setHelpOpen] = useStateA(false);
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
@@ -268,6 +269,8 @@ function App() {
         e.preventDefault(); undo();
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
         e.preventDefault(); redo();
+      } else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault(); setHelpOpen(o => !o);
       }
     }
     window.addEventListener('keydown', onKey);
@@ -486,6 +489,17 @@ function App() {
                   onClick={() => setSoundOn(!soundOn)} title="Sound effects — sirens on dispatch, ding at bus stops">
             {soundOn ? '🔊' : '🔇'}
           </button>
+          <span className="tool-sep"/>
+          <button className="tool-btn" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)">
+            ?
+          </button>
+        </div>
+
+        {/* City stats chip */}
+        <div className="stats-chip" data-no-pan>
+          <span title={`${state.streets.length} road segments`}>🛣 {state.streets.length}</span>
+          <span title={`${state.buildings.length} buildings & decor`}>🏠 {state.buildings.length}</span>
+          <span title={`${intersections.length} intersections`}>⊥ {intersections.length}</span>
         </div>
 
         {/* Zoom controls */}
@@ -552,6 +566,27 @@ function App() {
                 onClick={confirmDialog.onConfirm}>
                 {confirmDialog.confirmLabel}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {helpOpen && (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
+          <div className="modal-card" role="dialog" aria-modal="true" style={{ maxWidth: 460 }}>
+            <h3 className="modal-title">Keyboard shortcuts</h3>
+            <div className="shortcut-list">
+              <div className="shortcut-row"><span><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></span><span>Undo</span></div>
+              <div className="shortcut-row"><span><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></span><span>Redo</span></div>
+              <div className="shortcut-row"><span><kbd>Delete</kbd> · <kbd>Backspace</kbd></span><span>Delete selected</span></div>
+              <div className="shortcut-row"><span><kbd>Esc</kbd></span><span>Deselect / cancel draw</span></div>
+              <div className="shortcut-row"><span><kbd>Shift</kbd> while drawing</span><span>Snap to 15° angle</span></div>
+              <div className="shortcut-row"><span>Double-click a road or building</span><span>Rename it</span></div>
+              <div className="shortcut-row"><span>Drag from the left palette</span><span>Place a building</span></div>
+              <div className="shortcut-row"><span><kbd>?</kbd></span><span>Toggle this help</span></div>
+            </div>
+            <div className="modal-actions">
+              <button className="modal-btn modal-confirm" onClick={() => setHelpOpen(false)} autoFocus>Got it</button>
             </div>
           </div>
         </div>
