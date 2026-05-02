@@ -101,6 +101,29 @@ function loadInitialState() {
   return p.state;
 }
 
+// ----- ACHIEVEMENTS -----
+// Each milestone has an `id`, a `label`, an `emoji` for the toast, and a
+// pure check(state, intersections, requiredKinds) predicate. Effects only
+// fire on a false→true transition since the last frame, per project.
+const ACHIEVEMENTS = [
+  { id: 'first_road',     emoji: '🛣️', label: 'First Road!',
+    check: (s) => s.streets.length >= 1 },
+  { id: 'intersection',   emoji: '➕', label: 'First Intersection!',
+    check: (_s, i) => i.length >= 1 },
+  { id: 'right_angle',    emoji: '⊥',  label: 'Right-Angle Corner!',
+    check: (_s, i) => i.some(it => it.type === 'right') },
+  { id: 'parallel_pair',  emoji: '∥',  label: 'Parallel Streets!',
+    check: (s) => Geom.findParallels(s.streets).length >= 1 },
+  { id: 'first_building', emoji: '🏠', label: 'First Building Placed!',
+    check: (s) => s.buildings.length >= 1 },
+  { id: 'five_kinds',     emoji: '🏙️', label: '5 Different Kinds!',
+    check: (s) => new Set(s.buildings.map(b => b.kind)).size >= 5 },
+  { id: 'homes_12',       emoji: '🏘️', label: '12 Homes — a Neighborhood!',
+    check: (s) => s.buildings.filter(b => b.kind === 'home').length >= 12 },
+  { id: 'all_required',   emoji: '🎉', label: 'All Required Placed!',
+    check: (s, _i, req) => req.every(k => s.buildings.some(b => b.kind === k)) },
+];
+
 function App() {
   const [bundle, setBundle] = useStateA(loadInitialBundle);
   const activeProject = bundle.projects.find(p => p.id === bundle.activeId) || bundle.projects[0];
@@ -152,10 +175,35 @@ function App() {
   }, [tool, drawStyle, showAngles, liveMode, soundOn, weather]);
 
   // Toast helper
-  function showToast(msg) {
+  function showToast(msg, ms = 2200) {
     setToast(msg);
-    setTimeout(() => setToast(null), 2200);
+    setTimeout(() => setToast(null), ms);
   }
+
+  // Achievement detector — diff currently-met against last-seen for this
+  // project; toast each newly-met one. Resets silently when switching
+  // projects so loading a finished city doesn't dump every badge.
+  const lastAchRef = useRefA({ projectId: null, met: new Set() });
+  useEffectA(() => {
+    const intersections = Geom.findIntersections(state.streets);
+    const reqKinds = Buildings.REQUIRED.map(r => r.kind);
+    const met = new Set();
+    for (const a of ACHIEVEMENTS) {
+      try { if (a.check(state, intersections, reqKinds)) met.add(a.id); } catch (e) {}
+    }
+    if (lastAchRef.current.projectId !== bundle.activeId) {
+      lastAchRef.current = { projectId: bundle.activeId, met };
+      return;
+    }
+    for (const id of met) {
+      if (!lastAchRef.current.met.has(id)) {
+        const a = ACHIEVEMENTS.find(x => x.id === id);
+        if (a) showToast(`${a.emoji} ${a.label}`, 3500);
+      }
+    }
+    lastAchRef.current = { projectId: bundle.activeId, met };
+    // eslint-disable-next-line
+  }, [state, bundle.activeId]);
 
   // Confirm modal helper
   function askConfirm(opts, onConfirm) {
