@@ -271,7 +271,12 @@ function projectClosest(streets, x, y) {
   return best;
 }
 
-function stepVehicles(motion, vehicles, streets, busStops, dt, now) {
+// Light cycle: each right-angle intersection alternates which street is green.
+// Phase 0 = streetA green / streetB red. Phase 1 = streetA red / streetB green.
+const LIGHT_CYCLE_MS = 6500;
+function currentLightPhase(now) { return Math.floor(now / LIGHT_CYCLE_MS) % 2; }
+
+function stepVehicles(motion, vehicles, streets, busStops, lightInfo, dt, now) {
   // prune motion entries for vehicles that no longer exist
   const valid = new Set(vehicles.map(v => v.id));
   for (const id of Array.from(motion.keys())) {
@@ -324,6 +329,27 @@ function stepVehicles(motion, vehicles, streets, busStops, dt, now) {
     }
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len === 0) continue;
+
+    // Red-light obedience: if there's a right-angle intersection ahead within
+    // 6-28 px and the vehicle's street is currently red, hold position.
+    if (lightInfo && lightInfo.byStreet) {
+      const lights = lightInfo.byStreet.get(m.streetId);
+      if (lights) {
+        for (const l of lights) {
+          const ahead = m.dir > 0 ? l.tInt > m.t : l.tInt < m.t;
+          if (!ahead) continue;
+          const dist = Math.abs(l.tInt - m.t) * len;
+          if (dist < 6 || dist > 28) continue;
+          const greenForMe = l.isStreetA ? lightInfo.phase === 0 : lightInfo.phase === 1;
+          if (!greenForMe) {
+            m.pauseUntil = now + 220; // re-check ~5x/sec
+            break;
+          }
+        }
+        if (m.pauseUntil > now) continue;
+      }
+    }
+
     m.t += m.dir * (m.speed * dt) / len;
 
     if (m.t > 1 || m.t < 0) {
@@ -418,42 +444,56 @@ function Person({ p }) {
   );
 }
 
-// ============ FIRE TRUCK DISPATCH ============
-function stepFireTrucks(trucks, cooldownRef, fireDepts, streets, dt, now) {
+// ============ EMERGENCY DISPATCH (fire trucks, police cars) ============
+const FIRE_CFG = {
+  kind: 'firetruck', cap: 2,
+  speedMin: 110, speedMax: 160,
+  lifetimeMin: 12000, lifetimeMax: 20000,
+  cooldownMin: 25, cooldownMax: 55,
+};
+const POLICE_CFG = {
+  kind: 'policecar', cap: 2,
+  speedMin: 100, speedMax: 150,
+  lifetimeMin: 15000, lifetimeMax: 25000,
+  cooldownMin: 22, cooldownMax: 50,
+};
+
+function stepDispatchedFleet(items, cooldownRef, stations, streets, dt, now, cfg) {
   cooldownRef.current -= dt;
 
-  if (cooldownRef.current <= 0 && fireDepts.length > 0 && streets.length > 0 && trucks.length < 2) {
-    const dept = fireDepts[Math.floor(Math.random() * fireDepts.length)];
-    const near = projectClosest(streets, dept.x, dept.y);
+  if (cooldownRef.current <= 0 && stations.length > 0 && streets.length > 0 && items.length < cfg.cap) {
+    const station = stations[Math.floor(Math.random() * stations.length)];
+    const near = projectClosest(streets, station.x, station.y);
     if (near && near.dist < 200) {
-      trucks.push({
-        id: `ft-${now.toFixed(0)}-${Math.random().toString(36).slice(2,5)}`,
+      items.push({
+        id: `${cfg.kind}-${now.toFixed(0)}-${Math.random().toString(36).slice(2,5)}`,
+        kind: cfg.kind,
         streetId: near.street.id,
         t: near.t,
         dir: Math.random() < 0.5 ? 1 : -1,
-        speed: 110 + Math.random() * 50,
-        despawnAt: now + 12000 + Math.random() * 8000,
-        x: dept.x, y: dept.y,
+        speed: cfg.speedMin + Math.random() * (cfg.speedMax - cfg.speedMin),
+        despawnAt: now + cfg.lifetimeMin + Math.random() * (cfg.lifetimeMax - cfg.lifetimeMin),
+        x: station.x, y: station.y,
         rot: 0, flipX: false,
         blink: true, blinkAt: now,
       });
     }
-    cooldownRef.current = 25 + Math.random() * 30;
+    cooldownRef.current = cfg.cooldownMin + Math.random() * (cfg.cooldownMax - cfg.cooldownMin);
   }
 
-  for (let i = trucks.length - 1; i >= 0; i--) {
-    const t = trucks[i];
-    if (now > t.despawnAt) { trucks.splice(i, 1); continue; }
-    if (now - t.blinkAt > 240) { t.blink = !t.blink; t.blinkAt = now; }
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (now > it.despawnAt) { items.splice(i, 1); continue; }
+    if (now - it.blinkAt > 240) { it.blink = !it.blink; it.blinkAt = now; }
 
-    const s = streets.find(st => st.id === t.streetId);
-    if (!s) { trucks.splice(i, 1); continue; }
+    const s = streets.find(st => st.id === it.streetId);
+    if (!s) { items.splice(i, 1); continue; }
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len === 0) continue;
-    t.t += t.dir * (t.speed * dt) / len;
+    it.t += it.dir * (it.speed * dt) / len;
 
-    if (t.t > 1 || t.t < 0) {
-      const reachedEnd = t.t > 1 ? 2 : 1;
+    if (it.t > 1 || it.t < 0) {
+      const reachedEnd = it.t > 1 ? 2 : 1;
       const cx = reachedEnd === 2 ? s.x2 : s.x1;
       const cy = reachedEnd === 2 ? s.y2 : s.y1;
       const conns = [];
@@ -464,38 +504,36 @@ function stepFireTrucks(trucks, cooldownRef, fireDepts, streets, dt, now) {
       }
       if (conns.length > 0) {
         const next = conns[Math.floor(Math.random() * conns.length)];
-        t.streetId = next.street.id;
-        t.dir = next.end === 1 ? 1 : -1;
-        t.t = next.end === 1 ? 0.001 : 0.999;
+        it.streetId = next.street.id;
+        it.dir = next.end === 1 ? 1 : -1;
+        it.t = next.end === 1 ? 0.001 : 0.999;
       } else {
-        t.dir = -t.dir;
-        t.t = t.t > 1 ? 1 : 0;
+        it.dir = -it.dir;
+        it.t = it.t > 1 ? 1 : 0;
       }
     }
 
-    const sNow = streets.find(st => st.id === t.streetId);
+    const sNow = streets.find(st => st.id === it.streetId);
     if (!sNow) continue;
     const dx = sNow.x2 - sNow.x1, dy = sNow.y2 - sNow.y1;
     const ll = Math.hypot(dx, dy) || 1;
-    const dirX = (t.dir > 0 ? dx : -dx) / ll;
-    const dirY = (t.dir > 0 ? dy : -dy) / ll;
+    const dirX = (it.dir > 0 ? dx : -dx) / ll;
+    const dirY = (it.dir > 0 ? dy : -dy) / ll;
     const rx = -dirY, ry = dirX;
-    t.x = sNow.x1 + t.t * dx + rx * 9;
-    t.y = sNow.y1 + t.t * dy + ry * 9;
+    it.x = sNow.x1 + it.t * dx + rx * 9;
+    it.y = sNow.y1 + it.t * dy + ry * 9;
     let rot = Math.atan2(dirY, dirX) * 180 / Math.PI;
     let flipX = false;
     if (rot > 90) { rot -= 180; flipX = true; }
     else if (rot < -90) { rot += 180; flipX = true; }
-    t.rot = rot; t.flipX = flipX;
+    it.rot = rot; it.flipX = flipX;
   }
 }
 
-function FireTruck({ t }) {
-  const transform = `translate(${t.x},${t.y}) rotate(${t.rot})${t.flipX ? ' scale(-1,1)' : ''}`;
+function FireTruckGfx({ blink }) {
   return (
-    <g transform={transform}>
-      {/* siren glow when on */}
-      {t.blink && <circle cx="0" cy="-7" r="9" fill="#ff3030" opacity="0.22"/>}
+    <g>
+      {blink && <circle cx="0" cy="-7" r="9" fill="#ff3030" opacity="0.22"/>}
       <rect x="-13" y="-5" width="26" height="10" rx="2" fill="#d94c3a" stroke="#2a2418" strokeWidth="1.5"/>
       <rect x="-13" y="-5" width="7" height="10" fill="#fff" stroke="#2a2418" strokeWidth="1"/>
       <rect x="-4" y="-3.5" width="6" height="3.5" fill="#a8d8e8" stroke="#2a2418" strokeWidth="0.5"/>
@@ -504,19 +542,64 @@ function FireTruck({ t }) {
       <circle cx="-8" cy="6" r="0.9" fill="#7a7060"/>
       <circle cx="8"  cy="6" r="2.2" fill="#2a2418" stroke="#2a2418" strokeWidth="0.4"/>
       <circle cx="8"  cy="6" r="0.9" fill="#7a7060"/>
-      <rect x="-2" y="-7" width="4" height="2" fill={t.blink ? '#ff3030' : '#660000'} stroke="#2a2418" strokeWidth="0.4"/>
+      <rect x="-2" y="-7" width="4" height="2" fill={blink ? '#ff3030' : '#660000'} stroke="#2a2418" strokeWidth="0.4"/>
     </g>
   );
 }
 
-function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts }) {
+function PoliceCarGfx({ blink }) {
+  return (
+    <g>
+      {/* alternating red/blue siren glow */}
+      <circle cx="0" cy="-7" r="9" fill={blink ? '#3060ff' : '#ff3030'} opacity="0.22"/>
+      <rect x="-12" y="-5" width="24" height="10" rx="2.5" fill="#fff" stroke="#2a2418" strokeWidth="1.5"/>
+      {/* black band along middle */}
+      <rect x="-12" y="-1" width="24" height="3" fill="#1a1a2a" stroke="#2a2418" strokeWidth="0.4"/>
+      <rect x="-7" y="-3.5" width="6" height="3" fill="#a8d8e8" stroke="#2a2418" strokeWidth="0.4"/>
+      <rect x="1"  y="-3.5" width="6" height="3" fill="#a8d8e8" stroke="#2a2418" strokeWidth="0.4"/>
+      <circle cx="-7" cy="6" r="2.1" fill="#2a2418" stroke="#2a2418" strokeWidth="0.4"/>
+      <circle cx="-7" cy="6" r="0.8" fill="#7a7060"/>
+      <circle cx="7"  cy="6" r="2.1" fill="#2a2418" stroke="#2a2418" strokeWidth="0.4"/>
+      <circle cx="7"  cy="6" r="0.8" fill="#7a7060"/>
+      {/* roof bar with two lights */}
+      <rect x="-3.5" y="-7" width="3" height="2" fill={blink ? '#3060ff' : '#660000'} stroke="#2a2418" strokeWidth="0.3"/>
+      <rect x="0.5"  y="-7" width="3" height="2" fill={blink ? '#660000' : '#ff3030'} stroke="#2a2418" strokeWidth="0.3"/>
+    </g>
+  );
+}
+
+function DispatchedVehicle({ d }) {
+  const transform = `translate(${d.x},${d.y}) rotate(${d.rot})${d.flipX ? ' scale(-1,1)' : ''}`;
+  return (
+    <g transform={transform}>
+      {d.kind === 'policecar' ? <PoliceCarGfx blink={d.blink}/> : <FireTruckGfx blink={d.blink}/>}
+    </g>
+  );
+}
+
+// ============ TRAFFIC LIGHTS ============
+// Drawn at right-angle intersections; cycle in sync with currentLightPhase().
+function TrafficLight({ x, y, phase }) {
+  const greenForA = phase === 0;
+  return (
+    <g transform={`translate(${x + 14},${y - 14})`} pointerEvents="none">
+      <rect x="-3" y="-7" width="6" height="14" rx="1.2" fill="#1a1a1a" stroke="#2a2418" strokeWidth="0.5"/>
+      <circle cx="0" cy="-4" r="1.9" fill={greenForA ? '#440000' : '#ff3838'}/>
+      <circle cx="0" cy="4"  r="1.9" fill={greenForA ? '#3aff3a' : '#003a00'}/>
+    </g>
+  );
+}
+
+function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, trafficLights }) {
   const motionRef = useRef(new Map());
   const pedRef = useRef([]);
-  const truckRef = useRef([]);
-  const truckCooldownRef = useRef(8); // first dispatch after 8s
+  const fireTrucksRef = useRef([]);
+  const policeCarsRef = useRef([]);
+  const fireCooldownRef = useRef(8);   // first fire dispatch after 8s
+  const policeCooldownRef = useRef(15); // first police patrol after 15s
   // Keep latest props accessible from the RAF loop without re-subscribing.
   const propsRef = useRef({});
-  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts };
+  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo };
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -526,9 +609,12 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts }) {
       const dt = Math.min(0.1, (now - lastT) / 1000);
       lastT = now;
       const p = propsRef.current;
-      stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, dt, now);
+      const phase = currentLightPhase(now);
+      const lInfo = p.lightInfo ? { ...p.lightInfo, phase } : null;
+      stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, lInfo, dt, now);
       stepPedestrians(pedRef.current, p.peopleSeeds, dt, now);
-      stepFireTrucks(truckRef.current, truckCooldownRef, p.fireDepts, p.streets, dt, now);
+      stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, dt, now, FIRE_CFG);
+      stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, dt, now, POLICE_CFG);
       setTick(t => (t + 1) & 0xFFFF);
       raf = requestAnimationFrame(loop);
     };
@@ -537,9 +623,12 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts }) {
       cancelAnimationFrame(raf);
       motionRef.current.clear();
       pedRef.current = [];
-      truckRef.current = [];
+      fireTrucksRef.current = [];
+      policeCarsRef.current = [];
     };
   }, []);
+
+  const phase = currentLightPhase(performance.now());
 
   return (
     <g pointerEvents="none">
@@ -570,8 +659,13 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts }) {
           </g>
         );
       })}
-      {/* dispatched fire trucks */}
-      {truckRef.current.map(t => <FireTruck key={t.id} t={t}/>)}
+      {/* dispatched fire trucks + police cars */}
+      {fireTrucksRef.current.map(t => <DispatchedVehicle key={t.id} d={t}/>)}
+      {policeCarsRef.current.map(t => <DispatchedVehicle key={t.id} d={t}/>)}
+      {/* traffic lights at right-angle intersections */}
+      {trafficLights && trafficLights.map((t, i) => (
+        <TrafficLight key={`tl-${i}`} x={t.x} y={t.y} phase={phase}/>
+      ))}
     </g>
   );
 }
@@ -609,6 +703,31 @@ window.CityCanvas = function CityCanvas({
   const [drawPreview, setDrawPreview] = useState(null);
 
   const intersections = useMemo(() => Geom.findIntersections(state.streets), [state.streets]);
+
+  // Traffic-light geometry: per right-angle intersection, the parametric
+  // position on each crossing street so vehicles can detect "intersection
+  // ahead within X px" cheaply. Recomputed only when streets change.
+  const lightData = useMemo(() => {
+    const byStreet = new Map();
+    const lights = [];
+    for (const it of intersections) {
+      if (it.type !== 'right') continue;
+      const sA = state.streets.find(s => s.id === it.streetA);
+      const sB = state.streets.find(s => s.id === it.streetB);
+      if (!sA || !sB) continue;
+      const lenA2 = (sA.x2 - sA.x1) ** 2 + (sA.y2 - sA.y1) ** 2;
+      const lenB2 = (sB.x2 - sB.x1) ** 2 + (sB.y2 - sB.y1) ** 2;
+      if (lenA2 === 0 || lenB2 === 0) continue;
+      const tA = ((it.x - sA.x1) * (sA.x2 - sA.x1) + (it.y - sA.y1) * (sA.y2 - sA.y1)) / lenA2;
+      const tB = ((it.x - sB.x1) * (sB.x2 - sB.x1) + (it.y - sB.y1) * (sB.y2 - sB.y1)) / lenB2;
+      if (!byStreet.has(it.streetA)) byStreet.set(it.streetA, []);
+      if (!byStreet.has(it.streetB)) byStreet.set(it.streetB, []);
+      byStreet.get(it.streetA).push({ tInt: tA, isStreetA: true });
+      byStreet.get(it.streetB).push({ tInt: tB, isStreetA: false });
+      lights.push({ x: it.x, y: it.y });
+    }
+    return { byStreet, lights };
+  }, [intersections, state.streets]);
 
   // Find the closest street endpoint to a world-space point. Returns
   // { x, y, streetId, end: 1|2 } if within `radius` px in world coords, else null.
@@ -1035,7 +1154,8 @@ window.CityCanvas = function CityCanvas({
               />
             );
           })}
-          {/* Animated vehicles, pedestrians, and dispatched fire trucks */}
+          {/* Animated vehicles, pedestrians, dispatched emergency vehicles,
+              and traffic lights at right-angle intersections. */}
           {liveMode && (
             <CityLife
               vehicles={state.buildings.filter(b => VEHICLE_KINDS.has(b.kind))}
@@ -1043,6 +1163,9 @@ window.CityCanvas = function CityCanvas({
               busStops={state.buildings.filter(b => b.kind === 'busStop')}
               peopleSeeds={state.buildings.filter(b => Buildings.REQUIRED.some(r => r.kind === b.kind))}
               fireDepts={state.buildings.filter(b => b.kind === 'fire')}
+              policeStations={state.buildings.filter(b => b.kind === 'police')}
+              lightInfo={{ byStreet: lightData.byStreet }}
+              trafficLights={lightData.lights}
             />
           )}
           {/* protractor overlay */}

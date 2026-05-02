@@ -316,6 +316,61 @@ function App() {
 
   function printMap() { window.print(); }
 
+  function exportJSON() {
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      cityName: state.cityName,
+      population: state.population,
+      streets: state.streets,
+      buildings: state.buildings,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(state.cityName || 'city').replace(/[^a-z0-9]/gi, '_')}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    showToast('💾 City exported as JSON');
+  }
+
+  function importJSON() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        let data;
+        try { data = JSON.parse(ev.target.result); }
+        catch { showToast('Could not parse — is that a JSON file?'); return; }
+        if (!data || !Array.isArray(data.streets) || !Array.isArray(data.buildings)) {
+          showToast('Not a Geometry City file — missing streets/buildings');
+          return;
+        }
+        askConfirm({
+          title: 'Replace your city?',
+          message: `Load "${data.cityName || 'imported city'}"? This replaces your current streets and buildings.`,
+          confirmLabel: 'Load', danger: true,
+        }, () => {
+          bumpHistory();
+          setState(s => ({
+            ...s,
+            cityName: data.cityName || s.cityName,
+            population: typeof data.population === 'number' ? data.population : s.population,
+            streets: data.streets,
+            buildings: data.buildings,
+          }));
+          showToast(`📂 Loaded "${data.cityName || 'city'}"`);
+        });
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
   function resetSaved() {
     askConfirm({
       title: 'Start a brand-new city?',
@@ -435,6 +490,12 @@ function App() {
         <div className="bottom-bar" data-no-pan>
           <button className="tool-btn" onClick={exportPNG} title="Save as image (PNG)" style={{ width: 'auto', padding: '0 14px', borderRadius: 12 }}>
             💾 Save Image
+          </button>
+          <button className="tool-btn" onClick={exportJSON} title="Export city as JSON file (for backup or sharing)" style={{ width: 'auto', padding: '0 14px', borderRadius: 12 }}>
+            ⬇️ Export JSON
+          </button>
+          <button className="tool-btn" onClick={importJSON} title="Load a city from a JSON file" style={{ width: 'auto', padding: '0 14px', borderRadius: 12 }}>
+            ⬆️ Import JSON
           </button>
           <button className="tool-btn" onClick={printMap} title="Print" style={{ width: 'auto', padding: '0 14px', borderRadius: 12 }}>
             🖨️ Print
