@@ -27,8 +27,20 @@ function PaperDefs() {
           <feMergeNode in="SourceGraphic"/>
         </feMerge>
       </filter>
+      <pattern id="snap-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+        <circle cx="0" cy="0" r="1.1" fill="#3b6fb5" opacity="0.32"/>
+      </pattern>
     </defs>
   );
+}
+
+// Snap a world-space coord to the nearest 20 px grid point.
+const SNAP_PX = 20;
+function snapToGrid(x, y) {
+  return {
+    x: Math.round(x / SNAP_PX) * SNAP_PX,
+    y: Math.round(y / SNAP_PX) * SNAP_PX,
+  };
 }
 
 // Render the road network in layers, so crossings look like real roads:
@@ -755,20 +767,19 @@ function DispatchedVehicle({ d }) {
 // ============ CROSSWALKS ============
 // Painted-stripe crosswalks across each road approach at a right-angle
 // intersection. Drawn on top of asphalt fill but under centerlines.
+// One thin "stop line" stripe across the road approach. Cleaner than a
+// full zebra pattern when there are many intersections in view.
 function CrosswalkBars({ s, ix, iy, side }) {
   const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;
   const pX = -uy, pY = ux;
-  const baseX = ix + ux * side * 16;
-  const baseY = iy + uy * side * 16;
+  const baseX = ix + ux * side * 14;
+  const baseY = iy + uy * side * 14;
   const angle = Math.atan2(pY, pX) * 180 / Math.PI;
   return (
     <g transform={`translate(${baseX},${baseY}) rotate(${angle})`}>
-      {[-9, -3, 3, 9].map((off, i) => (
-        <rect key={i} x="-13" y={off - 1.4} width="26" height="2.8"
-              fill="#ffffff" opacity="0.85"/>
-      ))}
+      <rect x="-13" y="-1.6" width="26" height="3.2" fill="#ffffff" opacity="0.85"/>
     </g>
   );
 }
@@ -925,6 +936,7 @@ window.CityCanvas = function CityCanvas({
   const dragRef = useRef(null);
   const endpointDragRef = useRef(null); // { streetId, end: 1|2 }
   const [drawPreview, setDrawPreview] = useState(null);
+  const [isEditing, setIsEditing] = useState(false); // shows snap-grid dots while dragging/drawing
 
   const intersections = useMemo(() => Geom.findIntersections(state.streets), [state.streets]);
 
@@ -1060,10 +1072,11 @@ window.CityCanvas = function CityCanvas({
     // Draw tool: start a road
     if (tool === 'draw' && e.button === 0) {
       const p = toWorld(e.clientX, e.clientY);
-      // snap start to existing endpoint if close
+      // snap start to existing endpoint if close, otherwise to grid
       const snap = closestEndpoint(p.x, p.y, 30);
-      const sp = snap || p;
+      const sp = snap || snapToGrid(p.x, p.y);
       setDrawPreview({ x1: sp.x, y1: sp.y, x2: sp.x, y2: sp.y, snapStart: !!snap });
+      setIsEditing(true);
       return;
     }
     if (tool === 'pan' || e.button === 1 || e.button === 2) {
@@ -1081,18 +1094,22 @@ window.CityCanvas = function CityCanvas({
     }
     if (drawPreview) {
       const p = toWorld(e.clientX, e.clientY);
-      // Snap end to existing endpoint
+      // Snap end to existing endpoint, then 15° angle (shift), else grid.
       let snapEnd = closestEndpoint(p.x, p.y, 30);
       let { x1, y1 } = drawPreview;
-      let x2 = snapEnd ? snapEnd.x : p.x;
-      let y2 = snapEnd ? snapEnd.y : p.y;
-      if (e.shiftKey && !snapEnd) {
-        const dx = x2 - x1, dy = y2 - y1;
+      let x2, y2;
+      if (snapEnd) {
+        x2 = snapEnd.x; y2 = snapEnd.y;
+      } else if (e.shiftKey) {
+        const dx = p.x - x1, dy = p.y - y1;
         const ang = Math.atan2(dy, dx);
-        const snap = Math.round(ang / (Math.PI/12)) * (Math.PI/12); // 15° steps
+        const snap = Math.round(ang / (Math.PI/12)) * (Math.PI/12);
         const len = Math.hypot(dx, dy);
         x2 = x1 + Math.cos(snap) * len;
         y2 = y1 + Math.sin(snap) * len;
+      } else {
+        const g = snapToGrid(p.x, p.y);
+        x2 = g.x; y2 = g.y;
       }
       setHoverEndpoint(snapEnd ? { x: snapEnd.x, y: snapEnd.y } : null);
       setDrawPreview({ ...drawPreview, x2, y2, snapEnd: !!snapEnd });
@@ -1104,13 +1121,13 @@ window.CityCanvas = function CityCanvas({
       const street = state.streets.find(st => st.id === streetId);
       // Anchor = the OTHER endpoint of this street (the one we're not dragging)
       const anchor = end === 1 ? { x: street.x2, y: street.y2 } : { x: street.x1, y: street.y1 };
-      // Endpoint-snap takes priority over angle-snap when close
+      // Snap priority: existing endpoint > 15° angle (shift) > grid.
       const epSnap = closestEndpoint(p.x, p.y, 30, streetId);
-      let tx = epSnap ? epSnap.x : p.x;
-      let ty = epSnap ? epSnap.y : p.y;
+      let tx, ty;
       let snappedAngle = null;
-      // Shift → snap angle to nearest 15°, preserve length toward the cursor
-      if (e.shiftKey && !epSnap) {
+      if (epSnap) {
+        tx = epSnap.x; ty = epSnap.y;
+      } else if (e.shiftKey) {
         const dx = p.x - anchor.x, dy = p.y - anchor.y;
         const len = Math.hypot(dx, dy) || 1;
         let deg = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -1119,6 +1136,9 @@ window.CityCanvas = function CityCanvas({
         tx = anchor.x + Math.cos(rad) * len;
         ty = anchor.y + Math.sin(rad) * len;
         snappedAngle = ((snap15 % 360) + 360) % 360;
+      } else {
+        const g = snapToGrid(p.x, p.y);
+        tx = g.x; ty = g.y;
       }
       setHoverEndpoint(epSnap ? { x: epSnap.x, y: epSnap.y } : null);
       // Live angle indicator (from anchor toward dragged end)
@@ -1141,10 +1161,11 @@ window.CityCanvas = function CityCanvas({
       const dx = p.x - dragRef.current.startSvg.x;
       const dy = p.y - dragRef.current.startSvg.y;
       const id = dragRef.current.id;
+      const snapped = snapToGrid(dragRef.current.origX + dx, dragRef.current.origY + dy);
       setState(s => ({
         ...s,
         buildings: s.buildings.map(b => b.id === id
-          ? { ...b, x: dragRef.current.origX + dx, y: dragRef.current.origY + dy }
+          ? { ...b, x: snapped.x, y: snapped.y }
           : b)
       }));
     }
@@ -1154,6 +1175,7 @@ window.CityCanvas = function CityCanvas({
     panStart.current = null;
     if (dragRef.current) dragRef.current = null;
     if (endpointDragRef.current) { endpointDragRef.current = null; setHoverEndpoint(null); setAngleHud(null); }
+    setIsEditing(false);
     if (drawPreview) {
       const len = Math.hypot(drawPreview.x2 - drawPreview.x1, drawPreview.y2 - drawPreview.y1);
       if (len > 30) {
@@ -1218,6 +1240,7 @@ window.CityCanvas = function CityCanvas({
       const p = toWorld(e.clientX, e.clientY);
       dragRef.current = { id: b.id, startSvg: p, origX: b.x, origY: b.y };
       setSelectedId({ kind: 'building', id: b.id });
+      setIsEditing(true);
     }
   }
   function handleBuildingDouble(b, e) {
@@ -1303,6 +1326,11 @@ window.CityCanvas = function CityCanvas({
         <rect x="0" y="0" width={W} height={H} fill="url(#paper-grain)" opacity="0.6"/>
 
         <g transform={viewTransform}>
+          {/* Snap grid (only while drawing or dragging) */}
+          {isEditing && (
+            <rect x="-3000" y="-3000" width="9000" height="9000"
+                  fill="url(#snap-grid)" pointerEvents="none"/>
+          )}
           {/* Road network — layered for clean crossings */}
           <RoadNetwork
             streets={state.streets}
@@ -1313,6 +1341,7 @@ window.CityCanvas = function CityCanvas({
             onEndpointMouseDown={(streetId, end, e) => {
               endpointDragRef.current = { streetId, end };
               bumpHistory();
+              setIsEditing(true);
             }}
             hoverEndpoint={hoverEndpoint}
           />

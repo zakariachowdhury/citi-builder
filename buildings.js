@@ -215,8 +215,11 @@ window.Buildings = (function() {
   function pond() {
     return `
       <ellipse cx="0" cy="0" rx="22" ry="14" fill="#7ec0d8" stroke="${STROKE}" stroke-width="${SW}"/>
-      <path d="M -10 -2 q 3 -2 6 0" stroke="${STROKE}" stroke-width="1" fill="none"/>
-      <path d="M 4 4 q 3 -2 6 0" stroke="${STROKE}" stroke-width="1" fill="none"/>
+      <g>
+        <animate attributeName="opacity" values="0.35;0.95;0.35" dur="4.5s" repeatCount="indefinite"/>
+        <path d="M -10 -2 q 3 -2 6 0" stroke="${STROKE}" stroke-width="1" fill="none"/>
+        <path d="M 4 4 q 3 -2 6 0" stroke="${STROKE}" stroke-width="1" fill="none"/>
+      </g>
     `;
   }
   function shop() {
@@ -233,8 +236,13 @@ window.Buildings = (function() {
       <circle cx="0" cy="0" r="14" fill="#7ec0d8" stroke="${STROKE}" stroke-width="${SW}"/>
       <circle cx="0" cy="0" r="9" fill="#a8d8e8" stroke="${STROKE}" stroke-width="1.2"/>
       <circle cx="0" cy="0" r="4" fill="#cdb992" stroke="${STROKE}" stroke-width="1.2"/>
-      <line x1="0" y1="-4" x2="0" y2="-9" stroke="#a8d8e8" stroke-width="2"/>
-      <path d="M -3 -7 q 3 -3 6 0" stroke="#a8d8e8" stroke-width="1.5" fill="none"/>
+      <!-- pulsing water spout -->
+      <g>
+        <animateTransform attributeName="transform" type="scale"
+          values="1 0.7;1 1.15;1 0.7" dur="2.4s" repeatCount="indefinite"/>
+        <line x1="0" y1="-4" x2="0" y2="-9" stroke="#a8d8e8" stroke-width="2"/>
+        <path d="M -3 -7 q 3 -3 6 0" stroke="#a8d8e8" stroke-width="1.5" fill="none"/>
+      </g>
     `;
   }
   function bench() {
@@ -428,30 +436,39 @@ window.Buildings = (function() {
   }
 
   function amusementPark() {
-    // Top-down-ish: a colorful Ferris wheel with cars around the rim.
+    // Ferris wheel — the spokes/rim/carriages rotate as one group; the
+    // pedestal and center hub stay put. SVG <animateTransform> runs
+    // independently of React, so it costs nothing per frame.
     return `
-      <!-- pedestal -->
+      <!-- pedestal (static) -->
       <rect x="-2.5" y="10" width="5" height="10" fill="#7a5230" stroke="${STROKE}" stroke-width="${SW}"/>
       <line x1="-9" y1="20" x2="9" y2="20" stroke="${STROKE}" stroke-width="1.5"/>
-      <!-- spokes -->
-      <line x1="0" y1="6" x2="-18" y2="6"  stroke="${STROKE}" stroke-width="1"/>
-      <line x1="0" y1="6" x2="18"  y2="6"  stroke="${STROKE}" stroke-width="1"/>
-      <line x1="0" y1="6" x2="0"   y2="-12" stroke="${STROKE}" stroke-width="1"/>
-      <line x1="0" y1="6" x2="-13" y2="-7"  stroke="${STROKE}" stroke-width="1"/>
-      <line x1="0" y1="6" x2="13"  y2="-7"  stroke="${STROKE}" stroke-width="1"/>
-      <line x1="0" y1="6" x2="-13" y2="19"  stroke="${STROKE}" stroke-width="1"/>
-      <line x1="0" y1="6" x2="13"  y2="19"  stroke="${STROKE}" stroke-width="1"/>
-      <!-- rim -->
-      <circle cx="0" cy="6" r="18" fill="none" stroke="${STROKE}" stroke-width="1.5"/>
-      <!-- carriages -->
-      <circle cx="-18" cy="6"  r="3" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="18"  cy="6"  r="3" fill="#3b6fb5" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="0"   cy="-12" r="3" fill="#e7b94a" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="-13" cy="-7"  r="3" fill="#4f8b4a" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="13"  cy="-7"  r="3" fill="#8a5fb0" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="-13" cy="19"  r="3" fill="#de8348" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="13"  cy="19"  r="3" fill="#d97ba0" stroke="${STROKE}" stroke-width="0.8"/>
-      <!-- center hub -->
+
+      <!-- rotating wheel -->
+      <g>
+        <animateTransform attributeName="transform" type="rotate"
+          from="0 0 6" to="360 0 6" dur="22s" repeatCount="indefinite"/>
+        <!-- spokes -->
+        <line x1="0" y1="6" x2="-18" y2="6"  stroke="${STROKE}" stroke-width="1"/>
+        <line x1="0" y1="6" x2="18"  y2="6"  stroke="${STROKE}" stroke-width="1"/>
+        <line x1="0" y1="6" x2="0"   y2="-12" stroke="${STROKE}" stroke-width="1"/>
+        <line x1="0" y1="6" x2="-13" y2="-7"  stroke="${STROKE}" stroke-width="1"/>
+        <line x1="0" y1="6" x2="13"  y2="-7"  stroke="${STROKE}" stroke-width="1"/>
+        <line x1="0" y1="6" x2="-13" y2="19"  stroke="${STROKE}" stroke-width="1"/>
+        <line x1="0" y1="6" x2="13"  y2="19"  stroke="${STROKE}" stroke-width="1"/>
+        <!-- rim -->
+        <circle cx="0" cy="6" r="18" fill="none" stroke="${STROKE}" stroke-width="1.5"/>
+        <!-- carriages -->
+        <circle cx="-18" cy="6"  r="3" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="18"  cy="6"  r="3" fill="#3b6fb5" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="0"   cy="-12" r="3" fill="#e7b94a" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="-13" cy="-7"  r="3" fill="#4f8b4a" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="13"  cy="-7"  r="3" fill="#8a5fb0" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="-13" cy="19"  r="3" fill="#de8348" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="13"  cy="19"  r="3" fill="#d97ba0" stroke="${STROKE}" stroke-width="0.8"/>
+      </g>
+
+      <!-- center hub (static, sits on top of axle) -->
       <circle cx="0" cy="6" r="2.6" fill="#cdb992" stroke="${STROKE}" stroke-width="0.9"/>
     `;
   }
