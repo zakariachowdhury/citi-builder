@@ -90,8 +90,9 @@ window.Patterns = (function() {
 
   // ─── PROCEDURAL: random coherent town ───────────────────────────────────
   // Lays down a perimeter rectangle, 1-2 internal H/V streets, optionally
-  // one diagonal, then distributes the REQUIRED buildings + homes + decor
-  // across the resulting cells.
+  // one diagonal, then distributes REQUIRED civic buildings + homes + decor
+  // across the resulting cells. Items snap to a sub-grid inside each cell
+  // and a collision check keeps them from stacking on top of each other.
   function randomCity(cx, cy) {
     const rng = Math.random;
     const pick = (arr) => arr[Math.floor(rng() * arr.length)];
@@ -111,7 +112,7 @@ window.Patterns = (function() {
     streets.push(S(left,  top,    left,  bottom, namesC[cIdx++]));
     streets.push(S(right, top,    right, bottom, namesC[cIdx++]));
 
-    const hCount = 1 + Math.floor(rng() * 2); // 1 or 2 horizontal interior
+    const hCount = 1 + Math.floor(rng() * 2);
     const hYs = [];
     for (let i = 0; i < hCount; i++) {
       const y = top + (H / (hCount + 1)) * (i + 1);
@@ -125,16 +126,12 @@ window.Patterns = (function() {
       vXs.push(x);
       streets.push(S(x, top, x, bottom, namesC[cIdx++ % namesC.length]));
     }
-    if (rng() < 0.65) {
-      // Diagonal across an interior region for transversal variety
+    if (rng() < 0.55) {
       const x1 = left + W * (0.18 + rng() * 0.18);
       const x2 = right - W * (0.18 + rng() * 0.18);
       streets.push(S(x1, top, x2, bottom, namesD[0]));
     }
 
-    // Build cells from the orthogonal grid lines (diagonals ignored for
-    // building placement — placement still feels natural since most space
-    // remains rectangular).
     const xs = [left, ...vXs.slice().sort((a,b) => a-b), right];
     const ys = [top,  ...hYs.slice().sort((a,b) => a-b), bottom];
     const cells = [];
@@ -148,54 +145,132 @@ window.Patterns = (function() {
         });
       }
     }
-    cells.sort(() => 0.5 - rng());
 
+    // ---- Sub-grid slots per cell, kept clear of road centerlines ----
+    const ROAD_HALF = 24; // keep buildings this far from road centerline
+    function makeSlots(cell, padding, spacing) {
+      const lf = cell.mx - cell.w/2 + padding;
+      const rt = cell.mx + cell.w/2 - padding;
+      const tp = cell.my - cell.h/2 + padding;
+      const bt = cell.my + cell.h/2 - padding;
+      const out = [];
+      for (let y = tp; y <= bt + 0.1; y += spacing) {
+        for (let x = lf; x <= rt + 0.1; x += spacing) out.push({ x, y });
+      }
+      return out;
+    }
+    const placed = []; // { x, y, half }
+    function fits(x, y, half) {
+      // collision against other placed items
+      for (const p of placed) {
+        if (Math.hypot(x - p.x, y - p.y) < half + p.half + 6) return false;
+      }
+      // keep off the road centerlines
+      for (const xv of xs) if (Math.abs(x - xv) < ROAD_HALF + half) return false;
+      for (const yv of ys) if (Math.abs(y - yv) < ROAD_HALF + half) return false;
+      return true;
+    }
+    function tryPlaceInCell(cell, kind, half, padding, spacing, label) {
+      const slots = makeSlots(cell, padding, spacing).sort(() => 0.5 - rng());
+      for (const slot of slots) {
+        // small jitter for an organic-but-aligned look
+        const jx = slot.x + (rng() - 0.5) * 6;
+        const jy = slot.y + (rng() - 0.5) * 6;
+        if (fits(jx, jy, half)) {
+          placed.push({ x: jx, y: jy, half });
+          return { x: jx, y: jy };
+        }
+      }
+      return null;
+    }
+    function tryPlaceAnywhere(kind, half, padding, spacing, label) {
+      const order = cells.slice().sort(() => 0.5 - rng());
+      for (const c of order) {
+        const pos = tryPlaceInCell(c, kind, half, padding, spacing, label);
+        if (pos) return pos;
+      }
+      return null;
+    }
     function nicely(s) {
       return s.replace(/^./, c => c.toUpperCase()).replace(/([a-z])([A-Z])/g, '$1 $2');
     }
 
-    const required = ['library','park','school','grocery','masjid','police','fire',
-                      'movie','restaurant','gas','bank','mall','icecream','arcade','pool'];
     const buildings = [];
-    let r = 0;
-    for (const cell of cells) {
-      // 1-2 required buildings per cell, depending on its size
-      const slots = Math.min(2, Math.max(1, Math.floor(cell.w * cell.h / 60000)));
-      for (let s = 0; s < slots && r < required.length; s++) {
-        const kind = required[r++];
-        const px = cell.mx + (rng() - 0.5) * cell.w * 0.45;
-        const py = cell.my + (rng() - 0.5) * cell.h * 0.45;
-        buildings.push(B(kind, px, py, { label: nicely(kind) }));
-      }
-      if (r >= required.length) break;
-    }
-    // any leftovers go anywhere
-    while (r < required.length) {
-      const c = pick(cells);
-      buildings.push(B(required[r++], c.mx + (rng()-0.5)*c.w*0.5, c.my + (rng()-0.5)*c.h*0.5,
-                       { label: nicely(required[r-1]) }));
+    function add(kind, x, y, opts = {}) {
+      buildings.push(B(kind, x, y, opts));
     }
 
-    // Homes — 10-16 sprinkled
-    const homeCount = 10 + Math.floor(rng() * 7);
-    for (let i = 0; i < homeCount; i++) {
-      const c = pick(cells);
-      buildings.push(B('home', c.mx + (rng()-0.5)*c.w*0.7, c.my + (rng()-0.5)*c.h*0.7));
+    // 1) Required buildings: largest first, distributed cell-by-cell
+    const required = ['library','park','school','grocery','masjid','police','fire',
+                      'movie','restaurant','gas','bank','mall','icecream','arcade','pool'];
+    const reqOrder = required.slice().sort(() => 0.5 - rng());
+    let r = 0;
+    const cellsShuffled = cells.slice().sort(() => 0.5 - rng());
+    for (const cell of cellsShuffled) {
+      // 1-2 required per cell based on size
+      const want = Math.min(2, Math.max(1, Math.floor(cell.w * cell.h / 80000)));
+      for (let i = 0; i < want && r < reqOrder.length; i++) {
+        const kind = reqOrder[r++];
+        const pos = tryPlaceInCell(cell, kind, 30, 50, 80, nicely(kind));
+        if (pos) add(kind, pos.x, pos.y, { label: nicely(kind) });
+      }
     }
-    // Decor — trees, flowers, occasional bench / mailbox
-    const decorCount = 8 + Math.floor(rng() * 6);
+    // Any required leftover goes wherever it fits
+    while (r < reqOrder.length) {
+      const kind = reqOrder[r++];
+      const pos = tryPlaceAnywhere(kind, 30, 50, 80, nicely(kind));
+      if (pos) add(kind, pos.x, pos.y, { label: nicely(kind) });
+    }
+
+    // 2) Homes: 12-18 random color variants
+    const homes = 12 + Math.floor(rng() * 7);
+    for (let i = 0; i < homes; i++) {
+      const pos = tryPlaceAnywhere('home', 18, 40, 45);
+      if (pos) add('home', pos.x, pos.y, { variant: Math.floor(rng() * 9) });
+    }
+
+    // 3) Decor: trees, flowers, benches, mailboxes — random designs
+    const decorCount = 12 + Math.floor(rng() * 8);
     for (let i = 0; i < decorCount; i++) {
-      const c = pick(cells);
       const roll = rng();
-      const kind = roll < 0.55 ? 'tree' : roll < 0.85 ? 'flower' : roll < 0.95 ? 'bench' : 'mailbox';
-      buildings.push(B(kind, c.mx + (rng()-0.5)*c.w*0.85, c.my + (rng()-0.5)*c.h*0.85));
+      const kind = roll < 0.45 ? 'tree' : roll < 0.80 ? 'flower' : roll < 0.93 ? 'bench' : 'mailbox';
+      const half = kind === 'tree' ? 12 : kind === 'flower' ? 9 : 12;
+      const pos = tryPlaceAnywhere(kind, half, 30, 35);
+      if (pos) add(kind, pos.x, pos.y, { variant: Math.floor(rng() * 9) });
     }
-    // A bus stop or two on the perimeter
+
+    // 4) Bus stops on the perimeter
     const stops = 1 + Math.floor(rng() * 2);
     for (let i = 0; i < stops; i++) {
       const along = 0.25 + rng() * 0.5;
-      buildings.push(B('busStop', left + W * along, top - 22));
+      add('busStop', left + W * along, top - 22);
     }
+
+    // 5) Cars + buses ON the streets (roughly placed; CityLife will animate
+    // them along the road network when liveMode is on).
+    function placeVehicleOn(seg, kind) {
+      const t = 0.2 + rng() * 0.6;
+      const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const px = -uy, py = ux; // perpendicular pointing right of travel
+      const offset = kind === 'bus' ? 11 : 9;
+      let rot = Math.atan2(uy, ux) * 180 / Math.PI;
+      if (rot > 90) rot -= 180; else if (rot < -90) rot += 180;
+      add(kind, seg.x1 + t * dx + px * offset, seg.y1 + t * dy + py * offset, {
+        rot,
+        variant: Math.floor(rng() * 9),
+      });
+    }
+    // ~50% of streets get a car
+    for (const s of streets) {
+      if (rng() < 0.5) placeVehicleOn(s, 'car');
+    }
+    // 1-2 buses on the longest streets
+    const byLen = streets.slice().sort((a,b) =>
+      Math.hypot(b.x2-b.x1, b.y2-b.y1) - Math.hypot(a.x2-a.x1, a.y2-a.y1));
+    const busCount = 1 + Math.floor(rng() * 2);
+    for (let i = 0; i < Math.min(busCount, byLen.length); i++) placeVehicleOn(byLen[i], 'bus');
 
     return { streets, buildings };
   }

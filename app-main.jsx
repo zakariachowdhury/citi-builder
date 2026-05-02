@@ -362,6 +362,12 @@ function App() {
     if (Buildings.DECOR.find(d => d.kind === kind)) label = '';
     let variant = placedSameKind;
     let rot = 0;
+    // Items with multiple visual designs — pick one at random so the city
+    // doesn't look like a factory line.
+    const RANDOM_VARIANT_KINDS = new Set(['home', 'tree', 'flower', 'shop']);
+    if (RANDOM_VARIANT_KINDS.has(kind)) {
+      variant = Math.floor(Math.random() * 100);
+    }
     // Cars: random color + align to nearest road; flip 180° on the opposite side
     // so cars on each side appear to drive in opposite directions.
     if (kind === 'car') {

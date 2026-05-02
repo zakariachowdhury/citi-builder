@@ -183,21 +183,57 @@ window.Buildings = (function() {
   }
 
   // Decorations
-  function tree() {
+  function tree(variant = 0) {
+    const v = variant % 4;
+    if (v === 1) {
+      // Triangular pine
+      return `
+        <polygon points="0,-14 -8,-2 -2,-2 -8,4 -2,4 -2,8 2,8 2,4 8,4 2,-2 8,-2"
+          fill="#3a6b3f" stroke="${STROKE}" stroke-width="${SW}"/>
+        <rect x="-1.5" y="8" width="3" height="5" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
+      `;
+    }
+    if (v === 2) {
+      // Bushy multi-puff
+      return `
+        <circle cx="0"  cy="-2" r="9"  fill="#5fa050" stroke="${STROKE}" stroke-width="${SW}"/>
+        <circle cx="-5" cy="-7" r="5"  fill="#7ab26e" stroke="${STROKE}" stroke-width="1.2"/>
+        <circle cx="5"  cy="-6" r="4.5" fill="#7ab26e" stroke="${STROKE}" stroke-width="1.2"/>
+        <rect x="-1.5" y="6" width="3" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
+      `;
+    }
+    if (v === 3) {
+      // Slim oval
+      return `
+        <ellipse cx="0" cy="-3" rx="6" ry="11" fill="#4f8b4a" stroke="${STROKE}" stroke-width="${SW}"/>
+        <ellipse cx="-2" cy="-7" rx="3" ry="4" fill="#6ba85f" stroke="${STROKE}" stroke-width="1"/>
+        <rect x="-1.5" y="7" width="3" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
+      `;
+    }
+    // 0: original round bushy
     return `
-      <circle cx="0" cy="-2" r="10" fill="#4f8b4a" stroke="${STROKE}" stroke-width="${SW}"/>
-      <circle cx="-4" cy="-6" r="5" fill="#6ba85f" stroke="${STROKE}" stroke-width="1.2"/>
+      <circle cx="0"  cy="-2" r="10" fill="#4f8b4a" stroke="${STROKE}" stroke-width="${SW}"/>
+      <circle cx="-4" cy="-6" r="5"  fill="#6ba85f" stroke="${STROKE}" stroke-width="1.2"/>
       <rect x="-1.5" y="6" width="3" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
     `;
   }
-  function flower() {
+  function flower(variant = 0) {
+    const palettes = [
+      { center: '#e7b94a', petal: '#d94c3a' }, // yellow + red
+      { center: '#d94c3a', petal: '#f8d4e0' }, // red + pink
+      { center: '#fff8e0', petal: '#8a5fb0' }, // white + purple
+      { center: '#3b6fb5', petal: '#a8d8e8' }, // blue + light blue
+      { center: '#e7b94a', petal: '#fff8e0' }, // daisy
+      { center: '#de8348', petal: '#f4d35e' }, // orange + yellow
+    ];
+    const p = palettes[variant % palettes.length];
     return `
-      <circle cx="0" cy="-3" r="3" fill="#e7b94a" stroke="${STROKE}" stroke-width="1.2"/>
-      <circle cx="-4" cy="-5" r="2.5" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="4" cy="-5" r="2.5" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="-4" cy="-1" r="2.5" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="4" cy="-1" r="2.5" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="0" cy="-3" r="1.5" fill="#fff8e0"/>
+      <circle cx="-4" cy="-5" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="4"  cy="-5" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="-4" cy="-1" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="4"  cy="-1" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="0"  cy="-3" r="3"   fill="${p.center}" stroke="${STROKE}" stroke-width="1.2"/>
+      <circle cx="0"  cy="-3" r="1.4" fill="#fff8e0"/>
       <line x1="0" y1="-1" x2="0" y2="6" stroke="#4f8b4a" stroke-width="1.5"/>
     `;
   }
@@ -222,13 +258,20 @@ window.Buildings = (function() {
       </g>
     `;
   }
-  function shop() {
-    // generic decorative shop
+  function shop(variant = 0) {
+    const palettes = [
+      { wall: '#e8d4a8', roof: '#a0492a', win: '#fff8e0' }, // tan + brown
+      { wall: '#a8d8e8', roof: '#3b6fb5', win: '#fff8e0' }, // light blue
+      { wall: '#cbe6a8', roof: '#4f8b4a', win: '#fff8e0' }, // green
+      { wall: '#f8d4e0', roof: '#8a5fb0', win: '#fff8e0' }, // pink + purple
+      { wall: '#f4d35e', roof: '#de8348', win: '#fff8e0' }, // yellow + orange
+    ];
+    const p = palettes[variant % palettes.length];
     return `
-      <rect x="-18" y="-12" width="36" height="24" fill="#e8d4a8" stroke="${STROKE}" stroke-width="${SW}" rx="2"/>
-      <rect x="-18" y="-12" width="36" height="6" fill="#a0492a" stroke="${STROKE}" stroke-width="1.5"/>
-      <rect x="-12" y="-2" width="9" height="10" fill="#fff8e0" stroke="${STROKE}" stroke-width="1"/>
-      <rect x="3" y="-2" width="9" height="10" fill="#fff8e0" stroke="${STROKE}" stroke-width="1"/>
+      <rect x="-18" y="-12" width="36" height="24" fill="${p.wall}" stroke="${STROKE}" stroke-width="${SW}" rx="2"/>
+      <rect x="-18" y="-12" width="36" height="6"  fill="${p.roof}" stroke="${STROKE}" stroke-width="1.5"/>
+      <rect x="-12" y="-2"  width="9"  height="10" fill="${p.win}"  stroke="${STROKE}" stroke-width="1"/>
+      <rect x="3"   y="-2"  width="9"  height="10" fill="${p.win}"  stroke="${STROKE}" stroke-width="1"/>
     `;
   }
   function fountain() {
