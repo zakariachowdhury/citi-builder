@@ -240,6 +240,29 @@ function App() {
     } else apply();
   }
 
+  function generateRandomCity() {
+    const apply = () => {
+      bumpHistory();
+      const result = Patterns.randomCity(900, 550);
+      const streets = (result.streets || []).map(s => ({
+        ...s, id: nextId('s'), name: s.suggestedName,
+      }));
+      const buildings = (result.buildings || []).map(b => ({
+        ...b, id: nextId('b'),
+      }));
+      setState(s => ({ ...s, streets, buildings }));
+      setTimeout(() => setFitTick(t => t + 1), 0);
+      showToast('🎲 Random city generated');
+    };
+    if (state.streets.length > 0 || state.buildings.length > 0) {
+      askConfirm({
+        title: 'Replace your city with a random one?',
+        message: 'A new procedurally-generated layout will replace your current streets and buildings.',
+        confirmLabel: 'Generate', danger: true,
+      }, apply);
+    } else apply();
+  }
+
   // Drop from palette
   function onPaletteDrop(kind, x, y) {
     const def = Buildings.getDef(kind);
@@ -705,6 +728,9 @@ function App() {
 
         {/* Bottom toolbar */}
         <div className="bottom-bar" data-no-pan>
+          <button className="tool-btn" onClick={generateRandomCity} title="Generate a random city layout" style={{ width: 'auto', padding: '0 14px', borderRadius: 12 }}>
+            🎲 Random
+          </button>
           <button className="tool-btn" onClick={exportPNG} title="Save as image (PNG)" style={{ width: 'auto', padding: '0 14px', borderRadius: 12 }}>
             💾 Save Image
           </button>

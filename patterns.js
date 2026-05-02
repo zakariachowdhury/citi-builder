@@ -88,6 +88,118 @@ window.Patterns = (function() {
   // BLANK
   function emptyPattern() { return []; }
 
+  // ─── PROCEDURAL: random coherent town ───────────────────────────────────
+  // Lays down a perimeter rectangle, 1-2 internal H/V streets, optionally
+  // one diagonal, then distributes the REQUIRED buildings + homes + decor
+  // across the resulting cells.
+  function randomCity(cx, cy) {
+    const rng = Math.random;
+    const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+    const namesP = NAMES_PARALLEL.slice().sort(() => 0.5 - rng());
+    const namesC = NAMES_CROSS.slice().sort(() => 0.5 - rng());
+    const namesD = NAMES_DIAG.slice().sort(() => 0.5 - rng());
+    let pIdx = 0, cIdx = 0;
+
+    const W = 1000 + Math.floor(rng() * 250);
+    const H = 620  + Math.floor(rng() * 180);
+    const left  = cx - W / 2, right  = cx + W / 2;
+    const top   = cy - H / 2, bottom = cy + H / 2;
+
+    const streets = [];
+    streets.push(S(left,  top,    right, top,    namesP[pIdx++]));
+    streets.push(S(left,  bottom, right, bottom, namesP[pIdx++]));
+    streets.push(S(left,  top,    left,  bottom, namesC[cIdx++]));
+    streets.push(S(right, top,    right, bottom, namesC[cIdx++]));
+
+    const hCount = 1 + Math.floor(rng() * 2); // 1 or 2 horizontal interior
+    const hYs = [];
+    for (let i = 0; i < hCount; i++) {
+      const y = top + (H / (hCount + 1)) * (i + 1);
+      hYs.push(y);
+      streets.push(S(left, y, right, y, namesP[pIdx++ % namesP.length]));
+    }
+    const vCount = 1 + Math.floor(rng() * 2);
+    const vXs = [];
+    for (let i = 0; i < vCount; i++) {
+      const x = left + (W / (vCount + 1)) * (i + 1);
+      vXs.push(x);
+      streets.push(S(x, top, x, bottom, namesC[cIdx++ % namesC.length]));
+    }
+    if (rng() < 0.65) {
+      // Diagonal across an interior region for transversal variety
+      const x1 = left + W * (0.18 + rng() * 0.18);
+      const x2 = right - W * (0.18 + rng() * 0.18);
+      streets.push(S(x1, top, x2, bottom, namesD[0]));
+    }
+
+    // Build cells from the orthogonal grid lines (diagonals ignored for
+    // building placement — placement still feels natural since most space
+    // remains rectangular).
+    const xs = [left, ...vXs.slice().sort((a,b) => a-b), right];
+    const ys = [top,  ...hYs.slice().sort((a,b) => a-b), bottom];
+    const cells = [];
+    for (let i = 0; i < xs.length - 1; i++) {
+      for (let j = 0; j < ys.length - 1; j++) {
+        cells.push({
+          mx: (xs[i] + xs[i+1]) / 2,
+          my: (ys[j] + ys[j+1]) / 2,
+          w: xs[i+1] - xs[i],
+          h: ys[j+1] - ys[j],
+        });
+      }
+    }
+    cells.sort(() => 0.5 - rng());
+
+    function nicely(s) {
+      return s.replace(/^./, c => c.toUpperCase()).replace(/([a-z])([A-Z])/g, '$1 $2');
+    }
+
+    const required = ['library','park','school','grocery','masjid','police','fire',
+                      'movie','restaurant','gas','bank','mall','icecream','arcade','pool'];
+    const buildings = [];
+    let r = 0;
+    for (const cell of cells) {
+      // 1-2 required buildings per cell, depending on its size
+      const slots = Math.min(2, Math.max(1, Math.floor(cell.w * cell.h / 60000)));
+      for (let s = 0; s < slots && r < required.length; s++) {
+        const kind = required[r++];
+        const px = cell.mx + (rng() - 0.5) * cell.w * 0.45;
+        const py = cell.my + (rng() - 0.5) * cell.h * 0.45;
+        buildings.push(B(kind, px, py, { label: nicely(kind) }));
+      }
+      if (r >= required.length) break;
+    }
+    // any leftovers go anywhere
+    while (r < required.length) {
+      const c = pick(cells);
+      buildings.push(B(required[r++], c.mx + (rng()-0.5)*c.w*0.5, c.my + (rng()-0.5)*c.h*0.5,
+                       { label: nicely(required[r-1]) }));
+    }
+
+    // Homes — 10-16 sprinkled
+    const homeCount = 10 + Math.floor(rng() * 7);
+    for (let i = 0; i < homeCount; i++) {
+      const c = pick(cells);
+      buildings.push(B('home', c.mx + (rng()-0.5)*c.w*0.7, c.my + (rng()-0.5)*c.h*0.7));
+    }
+    // Decor — trees, flowers, occasional bench / mailbox
+    const decorCount = 8 + Math.floor(rng() * 6);
+    for (let i = 0; i < decorCount; i++) {
+      const c = pick(cells);
+      const roll = rng();
+      const kind = roll < 0.55 ? 'tree' : roll < 0.85 ? 'flower' : roll < 0.95 ? 'bench' : 'mailbox';
+      buildings.push(B(kind, c.mx + (rng()-0.5)*c.w*0.85, c.my + (rng()-0.5)*c.h*0.85));
+    }
+    // A bus stop or two on the perimeter
+    const stops = 1 + Math.floor(rng() * 2);
+    for (let i = 0; i < stops; i++) {
+      const along = 0.25 + rng() * 0.5;
+      buildings.push(B('busStop', left + W * along, top - 22));
+    }
+
+    return { streets, buildings };
+  }
+
   // ─── FINAL-PROJECT PRESETS — streets + buildings, fully placed ─────────
   // Helper to build a base grid frame used by several presets.
   function classicGrid(cx, cy) {
@@ -479,5 +591,6 @@ window.Patterns = (function() {
       { id: 'sunsetHeights',   label: 'Sunset Heights',    desc: 'Symmetric X · 12-home block',   fn: sunsetHeights,   preview: previews.sunsetHeights },
     ],
     NAMES_PARALLEL, NAMES_CROSS, NAMES_DIAG,
+    randomCity,
   };
 })();
