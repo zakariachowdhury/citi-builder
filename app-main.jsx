@@ -81,6 +81,7 @@ function App() {
   const [showProtractor, setShowProtractor] = useStateA(true);
   const [liveMode, setLiveMode] = useStateA(savedPref('liveMode', true));
   const [soundOn, setSoundOn] = useStateA(savedPref('soundOn', true));
+  const [weather, setWeather] = useStateA(savedPref('weather', 'clear'));
   const [selectedId, setSelectedId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
   const [confirmDialog, setConfirmDialog] = useStateA(null); // { title, message, confirmLabel, danger, onConfirm }
@@ -99,10 +100,10 @@ function App() {
   useEffectA(() => {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        tool, drawStyle, showAngles, liveMode, soundOn,
+        tool, drawStyle, showAngles, liveMode, soundOn, weather,
       }));
     } catch (e) {}
-  }, [tool, drawStyle, showAngles, liveMode, soundOn]);
+  }, [tool, drawStyle, showAngles, liveMode, soundOn, weather]);
 
   // Toast helper
   function showToast(msg) {
@@ -437,6 +438,7 @@ function App() {
           fitTick={fitTick}
           liveMode={liveMode}
           soundOn={soundOn}
+          weather={weather}
         />
 
         {/* Title bar overlay */}
@@ -490,6 +492,11 @@ function App() {
           <button className={`tool-btn ${soundOn ? 'active' : ''}`}
                   onClick={() => setSoundOn(!soundOn)} title="Sound effects — sirens on dispatch, ding at bus stops">
             {soundOn ? '🔊' : '🔇'}
+          </button>
+          <button className={`tool-btn ${weather !== 'clear' ? 'active' : ''}`}
+                  onClick={() => setWeather(weather === 'clear' ? 'rain' : weather === 'rain' ? 'snow' : 'clear')}
+                  title={`Weather: ${weather} — click to cycle`}>
+            {weather === 'rain' ? '🌧️' : weather === 'snow' ? '❄️' : '☀️'}
           </button>
           <span className="tool-sep"/>
           <button className="tool-btn" onClick={() => setHelpOpen(true)} title="Keyboard shortcuts (?)">

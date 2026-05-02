@@ -34,6 +34,48 @@ function PaperDefs() {
   );
 }
 
+// ============ WEATHER ============
+// Renders falling rain or snow over the entire canvas. Pure SVG <animate>
+// — declarative, no JS per frame.
+function Weather({ kind, w, h }) {
+  const particles = useMemo(() => {
+    if (kind !== 'rain' && kind !== 'snow') return [];
+    const count = kind === 'rain' ? 90 : 70;
+    return Array.from({ length: count }, () => ({
+      x: Math.random() * w,
+      dur: kind === 'rain' ? 0.7 + Math.random() * 0.5 : 5 + Math.random() * 4,
+      delay: Math.random() * (kind === 'rain' ? 1.2 : 8),
+      drift: kind === 'snow' ? (Math.random() - 0.5) * 70 : 0,
+      size: kind === 'snow' ? 1.5 + Math.random() * 1.4 : 1,
+    }));
+  }, [kind, w, h]);
+  if (!particles.length) return null;
+  const fall = h + 80;
+  return (
+    <g pointerEvents="none">
+      {particles.map((p, i) => kind === 'rain' ? (
+        <line key={i}
+          x1={p.x} y1={-30} x2={p.x - 6} y2={-22}
+          stroke="#6c8db5" strokeWidth="1.3" opacity="0.55">
+          <animateTransform attributeName="transform" type="translate"
+            from="0 0" to={`0 ${fall}`}
+            dur={`${p.dur}s`} repeatCount="indefinite"
+            begin={`-${p.delay}s`}/>
+        </line>
+      ) : (
+        <circle key={i}
+          cx={p.x} cy={-30} r={p.size}
+          fill="#ffffff" stroke="rgba(120,120,140,0.35)" strokeWidth="0.4">
+          <animateTransform attributeName="transform" type="translate"
+            from="0 0" to={`${p.drift} ${fall}`}
+            dur={`${p.dur}s`} repeatCount="indefinite"
+            begin={`-${p.delay}s`}/>
+        </circle>
+      ))}
+    </g>
+  );
+}
+
 // Snap a world-space coord to the nearest 20 px grid point.
 const SNAP_PX = 20;
 function snapToGrid(x, y) {
@@ -925,6 +967,7 @@ window.CityCanvas = function CityCanvas({
   zoomTick, fitTick, // counters: when these change, run zoom in/out / fit
   liveMode, // when true, cars/buses animate along the road network
   soundOn,  // when true, dispatch sirens + bus stop ding play
+  weather,  // 'clear' | 'rain' | 'snow'
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -1455,6 +1498,7 @@ window.CityCanvas = function CityCanvas({
             );
           })()}
         </g>
+        <Weather kind={weather} w={W} h={H}/>
       </svg>
 
       {editName && (
