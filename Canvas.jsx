@@ -365,9 +365,16 @@ function CityLife({ vehicles, streets }) {
         const offset = v.kind === 'bus' ? 11 : 9;
         const x = s.x1 + m.t * dx + rx * offset;
         const y = s.y1 + m.t * dy + ry * offset;
-        const rot = Math.atan2(dirY, dirX) * 180 / Math.PI;
+        // Keep wheels on the ground: clamp rotation to [-90, 90] and mirror
+        // horizontally for the other half. A 180° rotation would otherwise
+        // flip the vehicle upside-down when it travels westward.
+        let rot = Math.atan2(dirY, dirX) * 180 / Math.PI;
+        let flipX = false;
+        if (rot > 90) { rot -= 180; flipX = true; }
+        else if (rot < -90) { rot += 180; flipX = true; }
+        const transform = `translate(${x},${y}) rotate(${rot})${flipX ? ' scale(-1,1)' : ''}`;
         return (
-          <g key={v.id} transform={`translate(${x},${y}) rotate(${rot})`}>
+          <g key={v.id} transform={transform}>
             <VehicleVisual kind={v.kind} variant={v.variant}/>
           </g>
         );

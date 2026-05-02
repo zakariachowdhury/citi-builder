@@ -186,7 +186,11 @@ function App() {
       if (near) {
         const angle = Math.atan2(near.street.y2 - near.street.y1,
                                  near.street.x2 - near.street.x1) * 180 / Math.PI;
-        rot = angle + (near.side >= 0 ? 0 : 180);
+        rot = angle;
+        // Keep wheels on the ground — clamp to [-90, 90]. (Cars are roughly
+        // symmetric front-to-back, so we just align with the road.)
+        if (rot > 90) rot -= 180;
+        else if (rot < -90) rot += 180;
       }
     }
     setState(s => ({
