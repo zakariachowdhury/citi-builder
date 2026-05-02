@@ -2,6 +2,19 @@
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useCallback: useCallbackA, useRef: useRefA } = React;
 
 const STORAGE_KEY = 'geometry-city-state-v1';
+const PREFS_KEY = 'geometry-city-prefs-v1';
+
+// Read user-toggle prefs once at module load. `savedPref(k, fallback)` returns
+// the stored value if present, otherwise `fallback` — used to seed useState.
+const _SAVED_PREFS = (() => {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    return raw ? (JSON.parse(raw) || {}) : {};
+  } catch (e) { return {}; }
+})();
+function savedPref(key, fallback) {
+  return _SAVED_PREFS[key] !== undefined ? _SAVED_PREFS[key] : fallback;
+}
 
 let __idCounter = 1;
 function nextId(prefix) { return `${prefix}-${Date.now().toString(36)}-${(__idCounter++).toString(36)}`; }
@@ -60,12 +73,12 @@ function loadInitialState() {
 
 function App() {
   const [state, setState] = useStateA(loadInitialState);
-  const [tool, setTool] = useStateA('select'); // select | pan | eraser | draw
-  const [drawStyle, setDrawStyle] = useStateA('single');
-  const [showAngles, setShowAngles] = useStateA(false);
+  const [tool, setTool] = useStateA(savedPref('tool', 'select')); // select | pan | eraser | draw
+  const [drawStyle, setDrawStyle] = useStateA(savedPref('drawStyle', 'single'));
+  const [showAngles, setShowAngles] = useStateA(savedPref('showAngles', false));
   const [showProtractor, setShowProtractor] = useStateA(true);
-  const [liveMode, setLiveMode] = useStateA(true);
-  const [soundOn, setSoundOn] = useStateA(false);
+  const [liveMode, setLiveMode] = useStateA(savedPref('liveMode', true));
+  const [soundOn, setSoundOn] = useStateA(savedPref('soundOn', true));
   const [selectedId, setSelectedId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
   const [confirmDialog, setConfirmDialog] = useStateA(null); // { title, message, confirmLabel, danger, onConfirm }
@@ -74,10 +87,19 @@ function App() {
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
-  // Auto-save
+  // Auto-save city
   useEffectA(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
   }, [state]);
+
+  // Auto-save user prefs (toolbar toggles)
+  useEffectA(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        tool, drawStyle, showAngles, liveMode, soundOn,
+      }));
+    } catch (e) {}
+  }, [tool, drawStyle, showAngles, liveMode, soundOn]);
 
   // Toast helper
   function showToast(msg) {
