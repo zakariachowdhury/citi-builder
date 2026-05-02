@@ -56,25 +56,69 @@ function computePopulation(buildings) {
   return total;
 }
 
-function loadInitialState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  // default = rubric starter
+function defaultInitialState(name) {
   const cx = 900, cy = 550;
   const streets = Patterns.list[0].fn(cx, cy).map(s => ({
     ...s, id: nextId('s'), name: s.suggestedName,
   }));
   return {
-    cityName: 'My Awesome City',
+    cityName: name || 'My Awesome City',
     streets,
     buildings: [],
   };
 }
 
+const PROJECTS_KEY = 'geometry-city-projects-v1';
+
+// Load multi-project bundle. Migrates from legacy STORAGE_KEY on first run
+// so a user with an existing single city doesn't lose their work.
+function loadInitialBundle() {
+  try {
+    const raw = localStorage.getItem(PROJECTS_KEY);
+    if (raw) {
+      const b = JSON.parse(raw);
+      if (b && Array.isArray(b.projects) && b.projects.length) return b;
+    }
+  } catch (e) {}
+  let migrated;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) migrated = JSON.parse(raw);
+  } catch (e) {}
+  const state = migrated || defaultInitialState();
+  const id = `p-${Date.now().toString(36)}`;
+  return {
+    activeId: id,
+    projects: [{ id, name: state.cityName || 'My City', state, modifiedAt: Date.now() }],
+  };
+}
+
+function loadInitialState() {
+  // Kept for compatibility with any caller that imports it; reads the active
+  // project from the bundle.
+  const b = loadInitialBundle();
+  const p = b.projects.find(p => p.id === b.activeId) || b.projects[0];
+  return p.state;
+}
+
 function App() {
-  const [state, setState] = useStateA(loadInitialState);
+  const [bundle, setBundle] = useStateA(loadInitialBundle);
+  const activeProject = bundle.projects.find(p => p.id === bundle.activeId) || bundle.projects[0];
+  const state = activeProject.state;
+  // Wrap setState to write into the active project's slot. Functional and
+  // value forms both work; lastModified bumps so the project list is sorted
+  // sensibly elsewhere if needed.
+  const setState = useCallbackA((updater) => {
+    setBundle(prev => {
+      const projects = prev.projects.map(p => {
+        if (p.id !== prev.activeId) return p;
+        const newState = typeof updater === 'function' ? updater(p.state) : updater;
+        return { ...p, state: newState, modifiedAt: Date.now(), name: newState.cityName || p.name };
+      });
+      return { ...prev, projects };
+    });
+  }, []);
+
   const [tool, setTool] = useStateA(savedPref('tool', 'select')); // select | pan | eraser | draw
   const [drawStyle, setDrawStyle] = useStateA(savedPref('drawStyle', 'single'));
   const [showAngles, setShowAngles] = useStateA(savedPref('showAngles', false));
@@ -88,14 +132,15 @@ function App() {
   const [zoomTick, setZoomTick] = useStateA(0);
   const [fitTick, setFitTick] = useStateA(0);
   const [helpOpen, setHelpOpen] = useStateA(false);
+  const [projectsOpen, setProjectsOpen] = useStateA(false);
   const [dispatches, setDispatches] = useStateA([]);
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
-  // Auto-save city
+  // Auto-save the entire project bundle.
   useEffectA(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
-  }, [state]);
+    try { localStorage.setItem(PROJECTS_KEY, JSON.stringify(bundle)); } catch (e) {}
+  }, [bundle]);
 
   // Auto-save user prefs (toolbar toggles)
   useEffectA(() => {
@@ -446,7 +491,56 @@ function App() {
       confirmLabel: 'Start over', danger: true,
     }, () => {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(PROJECTS_KEY);
       location.reload();
+    });
+  }
+
+  // ----- Project (multiple-cities) actions -----
+  function newProject() {
+    const id = `p-${Date.now().toString(36)}`;
+    const cnt = bundle.projects.length + 1;
+    const state = defaultInitialState(`My City ${cnt}`);
+    setBundle(prev => ({
+      activeId: id,
+      projects: [...prev.projects, { id, name: state.cityName, state, modifiedAt: Date.now() }],
+    }));
+    setSelectedId(null);
+    showToast('🆕 Started a new city');
+  }
+  function duplicateProject() {
+    const id = `p-${Date.now().toString(36)}`;
+    const cur = activeProject;
+    const newState = JSON.parse(JSON.stringify(cur.state));
+    newState.cityName = `${cur.name} (copy)`;
+    setBundle(prev => ({
+      activeId: id,
+      projects: [...prev.projects, { id, name: newState.cityName, state: newState, modifiedAt: Date.now() }],
+    }));
+    setSelectedId(null);
+    showToast('📋 City duplicated');
+  }
+  function switchProject(id) {
+    if (id === bundle.activeId) return;
+    setBundle(prev => ({ ...prev, activeId: id }));
+    setSelectedId(null);
+  }
+  function deleteProject(id) {
+    if (bundle.projects.length <= 1) {
+      showToast('Can\'t delete the only city — make a new one first');
+      return;
+    }
+    const target = bundle.projects.find(p => p.id === id);
+    askConfirm({
+      title: `Delete "${target?.name || 'this city'}"?`,
+      message: 'This city will be removed permanently. Other cities are unaffected.',
+      confirmLabel: 'Delete', danger: true,
+    }, () => {
+      setBundle(prev => {
+        const projects = prev.projects.filter(p => p.id !== id);
+        const activeId = prev.activeId === id ? projects[0].id : prev.activeId;
+        return { activeId, projects };
+      });
     });
   }
 
@@ -491,10 +585,35 @@ function App() {
             onChange={(e) => setState(s => ({ ...s, cityName: e.target.value }))}
             placeholder="My City"
           />
+          <button
+            className="city-switcher"
+            title="Switch / manage saved cities"
+            onClick={() => setProjectsOpen(o => !o)}>
+            ▾
+          </button>
           <span className="pop">Population:</span>
           <span className="pop-num pop-num-derived" title="Auto-counted from buildings you place">
             {computePopulation(state.buildings).toLocaleString()}
           </span>
+          {projectsOpen && (
+            <div className="project-menu" onMouseLeave={() => setProjectsOpen(false)}>
+              <div className="project-menu-title">Saved cities</div>
+              {bundle.projects.map(p => (
+                <div key={p.id} className={`project-row ${p.id === bundle.activeId ? 'active' : ''}`}>
+                  <button className="project-name" onClick={() => { switchProject(p.id); setProjectsOpen(false); }}>
+                    {p.id === bundle.activeId ? '● ' : '  '}{p.name || '(untitled)'}
+                  </button>
+                  <button className="project-del"
+                          title="Delete this city"
+                          onClick={() => deleteProject(p.id)}>×</button>
+                </div>
+              ))}
+              <div className="project-menu-actions">
+                <button onClick={() => { newProject(); setProjectsOpen(false); }}>+ New blank</button>
+                <button onClick={() => { duplicateProject(); setProjectsOpen(false); }}>📋 Duplicate</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Toolbar */}
