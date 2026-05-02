@@ -90,7 +90,7 @@ function snapToGrid(x, y) {
 // pass 2: lighter asphalt fill (all streets) → erases the borders at crossings
 // pass 3: dashed centerlines, BUT broken at every intersection
 // pass 4: invisible click-targets per street (so the user can still select)
-function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStreetClick, onStreetDouble, onEndpointMouseDown, hoverEndpoint }) {
+function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStreetClick, onStreetDouble, onStreetContextMenu, onEndpointMouseDown, hoverEndpoint }) {
   // For each street, find all intersection points and compute the "t" parameter
   // (0..1) along the segment so we know where to break the centerline.
   const breaks = useMemo(() => {
@@ -219,7 +219,8 @@ function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStre
                     stroke="transparent" strokeWidth="36" strokeLinecap="round"
                     style={{ cursor: 'pointer' }}
                     onClick={(e) => onStreetClick(s, e)}
-                    onDoubleClick={(e) => onStreetDouble(s, e)}/>
+                    onDoubleClick={(e) => onStreetDouble(s, e)}
+                    onContextMenu={(e) => onStreetContextMenu && onStreetContextMenu(s, e)}/>
               {sel && onEndpointMouseDown && (
                 <g>
                   <circle cx={s.x1} cy={s.y1} r="9" fill="#fff" stroke="#3b6fb5" strokeWidth="2.5"
@@ -279,7 +280,7 @@ function Intersection({ it, showAngles }) {
 }
 
 // Building rendered via inline SVG markup
-function Building({ b, def, selected, onMouseDown, onClick, onDoubleClick }) {
+function Building({ b, def, selected, onMouseDown, onClick, onDoubleClick, onContextMenu }) {
   if (!def) return null;
   const inner = def.draw(b.variant || 0);
   return (
@@ -288,6 +289,7 @@ function Building({ b, def, selected, onMouseDown, onClick, onDoubleClick }) {
       onMouseDown={onMouseDown}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       style={{ cursor: 'grab' }}
     >
       {selected && (
@@ -1161,6 +1163,7 @@ window.CityCanvas = function CityCanvas({
   const [drawPreview, setDrawPreview] = useState(null);
   const [isEditing, setIsEditing] = useState(false); // shows snap-grid dots while dragging/drawing
   const [marquee, setMarquee] = useState(null); // {x1,y1,x2,y2} in world coords
+  const [contextMenu, setContextMenu] = useState(null); // {x, y, target: {kind, id}}
 
   const intersections = useMemo(() => Geom.findIntersections(state.streets), [state.streets]);
 
@@ -1303,7 +1306,10 @@ window.CityCanvas = function CityCanvas({
       setIsEditing(true);
       return;
     }
-    if (tool === 'pan' || e.button === 1 || e.button === 2) {
+    // Middle-click pans regardless of tool. Right-click is reserved for the
+    // context menu now; if pan is desired with no middle button, use the
+    // pan tool.
+    if (tool === 'pan' || e.button === 1) {
       setIsPanning(true);
       panStart.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
       e.preventDefault();
@@ -1522,8 +1528,85 @@ window.CityCanvas = function CityCanvas({
     if (marquee) return;
     setSelectedId(null);
     setEditName(null);
+    setContextMenu(null);
     if (setMultiSelected && multiSelected && multiSelected.size > 0) setMultiSelected(new Set());
   }
+
+  // ---- Right-click context menu ----
+  function openContextMenu(e, target) {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, target });
+  }
+  function ctxRename() {
+    if (!contextMenu) return;
+    const { kind, id } = contextMenu.target;
+    if (kind === 'building') {
+      const b = state.buildings.find(x => x.id === id);
+      if (b) setEditName({ kind: 'building', id, value: b.label || '', x: contextMenu.x, y: contextMenu.y });
+    } else if (kind === 'street') {
+      const s = state.streets.find(x => x.id === id);
+      if (s) setEditName({ kind: 'street', id, value: s.name || '', x: contextMenu.x, y: contextMenu.y });
+    }
+    setContextMenu(null);
+  }
+  function ctxRotate() {
+    if (!contextMenu || contextMenu.target.kind !== 'building') return;
+    const id = contextMenu.target.id;
+    bumpHistory();
+    setState(s => ({
+      ...s,
+      buildings: s.buildings.map(b => b.id === id ? { ...b, rot: ((b.rot || 0) + 90) % 360 } : b),
+    }));
+    setContextMenu(null);
+  }
+  function ctxDuplicate() {
+    if (!contextMenu) return;
+    const { kind, id } = contextMenu.target;
+    bumpHistory();
+    if (kind === 'building') {
+      const b = state.buildings.find(x => x.id === id);
+      if (!b) return;
+      const nb = { ...b, id: `b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,5)}`,
+                   x: b.x + 30, y: b.y + 30 };
+      setState(s => ({ ...s, buildings: [...s.buildings, nb] }));
+      setSelectedId({ kind: 'building', id: nb.id });
+    } else if (kind === 'street') {
+      const st = state.streets.find(x => x.id === id);
+      if (!st) return;
+      const ns = { ...st, id: `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,5)}`,
+                   x1: st.x1 + 30, y1: st.y1 + 30, x2: st.x2 + 30, y2: st.y2 + 30 };
+      setState(s => ({ ...s, streets: [...s.streets, ns] }));
+      setSelectedId({ kind: 'street', id: ns.id });
+    }
+    setContextMenu(null);
+  }
+  function ctxDelete() {
+    if (!contextMenu) return;
+    const { kind, id } = contextMenu.target;
+    bumpHistory();
+    if (kind === 'building') {
+      setState(s => ({ ...s, buildings: s.buildings.filter(x => x.id !== id) }));
+    } else if (kind === 'street') {
+      setState(s => ({ ...s, streets: s.streets.filter(x => x.id !== id) }));
+    }
+    if (selectedId && selectedId.id === id) setSelectedId(null);
+    setContextMenu(null);
+  }
+  // Close on outside click / Esc.
+  useEffect(() => {
+    if (!contextMenu) return;
+    function onDoc(e) {
+      if (!e.target.closest || !e.target.closest('.ctx-menu')) setContextMenu(null);
+    }
+    function onKey(e) { if (e.key === 'Escape') setContextMenu(null); }
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [contextMenu]);
 
   function commitName() {
     if (!editName) return;
@@ -1628,6 +1711,7 @@ window.CityCanvas = function CityCanvas({
             multiSelected={multiSelected}
             onStreetClick={handleStreetClick}
             onStreetDouble={handleStreetDouble}
+            onStreetContextMenu={(s, e) => openContextMenu(e, { kind: 'street', id: s.id })}
             onEndpointMouseDown={(streetId, end, e) => {
               endpointDragRef.current = { streetId, end };
               bumpHistory();
@@ -1700,6 +1784,7 @@ window.CityCanvas = function CityCanvas({
                 onMouseDown={(e) => handleBuildingMouseDown(b, e)}
                 onClick={(e) => { e.stopPropagation(); }}
                 onDoubleClick={(e) => handleBuildingDouble(b, e)}
+                onContextMenu={(e) => openContextMenu(e, { kind: 'building', id: b.id })}
               />
             );
           })}
@@ -1776,6 +1861,18 @@ window.CityCanvas = function CityCanvas({
             onBlur={commitName}
             placeholder={editName.kind === 'street' ? 'Street name...' : 'Building name...'}
           />
+        </div>
+      )}
+
+      {contextMenu && (
+        <div className="ctx-menu" style={{ left: contextMenu.x, top: contextMenu.y }}
+             onContextMenu={(e) => e.preventDefault()}>
+          <button onClick={ctxRename}>✏️ Rename</button>
+          {contextMenu.target.kind === 'building' && (
+            <button onClick={ctxRotate}>↻ Rotate 90°</button>
+          )}
+          <button onClick={ctxDuplicate}>📋 Duplicate</button>
+          <button className="ctx-danger" onClick={ctxDelete}>🗑 Delete</button>
         </div>
       )}
     </div>
