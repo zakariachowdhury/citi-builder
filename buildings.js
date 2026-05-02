@@ -238,14 +238,52 @@ window.Buildings = (function() {
     `;
   }
   function car(variant = 0) {
+    // 9 colors x 4 shapes (sedan / SUV / pickup / van) — variants cluster
+    // by shape, so each shape gets every color before the next shape starts.
     const colors = ['#3b6fb5','#d94c3a','#4f8b4a','#e7b94a','#8a5fb0','#de8348','#d97ba0','#2a2418','#f0ead2'];
-    const body = colors[variant % colors.length];
+    const c = colors[variant % colors.length];
+    const shape = Math.floor(variant / colors.length) % 4;
+
+    if (shape === 1) {
+      // SUV — taller and boxier
+      return `
+        <rect x="-10" y="-5" width="20" height="10" rx="2" fill="${c}" stroke="${STROKE}" stroke-width="1.5"/>
+        <rect x="-8" y="-4" width="14" height="6" rx="1" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.8"/>
+        <line x1="-1" y1="-4" x2="-1" y2="2" stroke="${STROKE}" stroke-width="0.5"/>
+        <circle cx="-6" cy="5" r="2.2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="6"  cy="5" r="2.2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
+      `;
+    }
+    if (shape === 2) {
+      // Pickup — short cab + open bed
+      return `
+        <rect x="-1" y="-4" width="12" height="8" fill="${c}" stroke="${STROKE}" stroke-width="1.4"/>
+        <rect x="0"  y="-3" width="10" height="6" fill="#5a4030" stroke="${STROKE}" stroke-width="0.4"/>
+        <rect x="-11" y="-4" width="11" height="8" rx="1.5" fill="${c}" stroke="${STROKE}" stroke-width="1.5"/>
+        <rect x="-9"  y="-3" width="7"  height="5" rx="0.8" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.7"/>
+        <circle cx="-7" cy="4" r="2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="7"  cy="4" r="2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
+      `;
+    }
+    if (shape === 3) {
+      // Van / lorry — longer, boxier, multiple side windows
+      return `
+        <rect x="-11" y="-4" width="22" height="9" rx="1.5" fill="${c}" stroke="${STROKE}" stroke-width="1.5"/>
+        <rect x="-9" y="-3" width="5" height="5" rx="0.6" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.6"/>
+        <rect x="-2" y="-3" width="4" height="4" rx="0.4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+        <rect x="4"  y="-3" width="4" height="4" rx="0.4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+        <line x1="9" y1="-4" x2="9" y2="5" stroke="${STROKE}" stroke-width="0.5"/>
+        <circle cx="-7" cy="5" r="2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="8"  cy="5" r="2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
+      `;
+    }
+    // 0: classic sedan
     return `
-      <rect x="-10" y="-4" width="20" height="8" rx="3" fill="${body}" stroke="${STROKE}" stroke-width="1.5"/>
+      <rect x="-10" y="-4" width="20" height="8" rx="3" fill="${c}" stroke="${STROKE}" stroke-width="1.5"/>
       <rect x="-7" y="-3" width="6" height="5" rx="1" fill="#a8d8e8" stroke="${STROKE}" stroke-width="1"/>
-      <rect x="1" y="-3" width="6" height="5" rx="1" fill="#a8d8e8" stroke="${STROKE}" stroke-width="1"/>
+      <rect x="1"  y="-3" width="6" height="5" rx="1" fill="#a8d8e8" stroke="${STROKE}" stroke-width="1"/>
       <circle cx="-6" cy="4" r="2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="6" cy="4" r="2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="6"  cy="4" r="2" fill="#2a2418" stroke="${STROKE}" stroke-width="0.8"/>
     `;
   }
   function pond() {

@@ -874,7 +874,7 @@ function App() {
               <span className="stat-control" title="Cars + buses on the road">
                 <button className="stat-btn" onClick={removeVehicleFromRoad} disabled={vehicleCount === 0}>−</button>
                 🚗 {vehicleCount}
-                <button className="stat-btn" onClick={() => addVehicleOnRoad(Math.random() < 0.85 ? 'car' : 'bus')} disabled={!state.streets.length}>+</button>
+                <button className="stat-btn" onClick={() => addVehicleOnRoad(Math.random() < 0.96 ? 'car' : 'bus')} disabled={!state.streets.length}>+</button>
               </span>
             </div>
           );

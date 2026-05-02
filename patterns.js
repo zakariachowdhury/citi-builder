@@ -277,7 +277,8 @@ window.Patterns = (function() {
     // 1-2 buses on the longest streets
     const byLen = streets.slice().sort((a,b) =>
       Math.hypot(b.x2-b.x1, b.y2-b.y1) - Math.hypot(a.x2-a.x1, a.y2-a.y1));
-    const busCount = 1 + Math.floor(rng() * 2);
+    // Buses are rare — typically 1, sometimes 2 on the longest street(s).
+    const busCount = rng() < 0.3 ? 2 : 1;
     for (let i = 0; i < Math.min(busCount, byLen.length); i++) placeVehicleOn(byLen[i], 'bus');
 
     return { streets, buildings };
