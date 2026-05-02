@@ -1284,13 +1284,20 @@ window.CityCanvas = function CityCanvas({
   }
 
   // ZOOM BUTTONS
+  // Zoom in/out is driven by an integer ticker that changes per click. The
+  // earlier version checked sign of the absolute counter, which broke the
+  // moment the user toggled directions (e.g. + + - - - left them at 0 with
+  // no zoom or the wrong direction). We now compare against the previous
+  // value and use the delta so the direction always matches the click.
+  const lastZoomTickRef = useRef(zoomTick || 0);
   useEffect(() => {
-    if (zoomTick === undefined || zoomTick === 0) return;
-    const dir = zoomTick > 0 ? 1 : -1;
-    const factor = dir > 0 ? 1.2 : 1/1.2;
+    if (zoomTick === undefined) return;
+    const delta = zoomTick - lastZoomTickRef.current;
+    lastZoomTickRef.current = zoomTick;
+    if (delta === 0) return;
+    const factor = Math.pow(1.2, delta);
     setView(v => {
       const ns = Math.max(0.2, Math.min(3, v.scale * factor));
-      // zoom around viewBox center
       const W = 1800, H = 1100;
       const cx = W / 2, cy = H / 2;
       const wx = (cx - v.x) / v.scale;

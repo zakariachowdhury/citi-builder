@@ -130,7 +130,10 @@ button { font-family: var(--hand); cursor: pointer; }
   box-shadow: 2px 2px 0 rgba(42,36,24,0.15);
   max-width: calc(100% - 290px);
   white-space: nowrap;
-  overflow: hidden;
+  /* visible so the project-switcher dropdown can render below this bar.
+     The .city input has its own width + text-overflow, so removing
+     overflow:hidden here doesn't let long city names spill out. */
+  overflow: visible;
 }
 .title-bar input.city {
   font-family: var(--display);
