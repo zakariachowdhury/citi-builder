@@ -245,6 +245,137 @@ function Protractor({ it }) {
   return null;
 }
 
+// ============ CITY LIFE: animated cars/buses ============
+// Vehicles ride along the road network, traversing one segment at a time.
+// On reaching an endpoint they pick a random connected segment (within 12 px)
+// to continue on; if none exist, they reverse. Pauses fire ~5%/s for variety.
+const VEHICLE_KINDS = new Set(['car', 'bus']);
+
+const VehicleVisual = React.memo(function VehicleVisual({ kind, variant }) {
+  const def = Buildings.getDef(kind);
+  if (!def) return null;
+  return <g dangerouslySetInnerHTML={{ __html: def.draw(variant || 0) }}/>;
+});
+
+function projectClosest(streets, x, y) {
+  let best = null, bestD = Infinity;
+  for (const s of streets) {
+    const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) continue;
+    const t = Math.max(0, Math.min(1, ((x - s.x1) * dx + (y - s.y1) * dy) / len2));
+    const px = s.x1 + t * dx, py = s.y1 + t * dy;
+    const d = Math.hypot(x - px, y - py);
+    if (d < bestD) { bestD = d; best = { street: s, t, dist: d }; }
+  }
+  return best;
+}
+
+function stepVehicles(motion, vehicles, streets, dt, now) {
+  // prune motion entries for vehicles that no longer exist
+  const valid = new Set(vehicles.map(v => v.id));
+  for (const id of Array.from(motion.keys())) {
+    if (!valid.has(id)) motion.delete(id);
+  }
+  for (const v of vehicles) {
+    let m = motion.get(v.id);
+    if (!m) {
+      const near = projectClosest(streets, v.x, v.y);
+      if (!near) continue;
+      const isBus = v.kind === 'bus';
+      m = {
+        streetId: near.street.id,
+        t: near.t,
+        dir: Math.random() < 0.5 ? 1 : -1,
+        speed: isBus ? 40 + Math.random() * 50 : 70 + Math.random() * 90,
+        pauseUntil: 0,
+      };
+      motion.set(v.id, m);
+    }
+    const s = streets.find(st => st.id === m.streetId);
+    if (!s) { motion.delete(v.id); continue; }
+    if (m.pauseUntil > now) continue;
+    if (Math.random() < 0.05 * dt) {
+      m.pauseUntil = now + 500 + Math.random() * 2000;
+      continue;
+    }
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (len === 0) continue;
+    m.t += m.dir * (m.speed * dt) / len;
+
+    if (m.t > 1 || m.t < 0) {
+      const reachedEnd = m.t > 1 ? 2 : 1;
+      const cx = reachedEnd === 2 ? s.x2 : s.x1;
+      const cy = reachedEnd === 2 ? s.y2 : s.y1;
+      const conns = [];
+      for (const o of streets) {
+        if (o.id === s.id) continue;
+        if (Math.hypot(o.x1 - cx, o.y1 - cy) < 14) conns.push({ street: o, end: 1 });
+        if (Math.hypot(o.x2 - cx, o.y2 - cy) < 14) conns.push({ street: o, end: 2 });
+      }
+      if (conns.length > 0) {
+        const next = conns[Math.floor(Math.random() * conns.length)];
+        m.streetId = next.street.id;
+        m.dir = next.end === 1 ? 1 : -1;
+        m.t = next.end === 1 ? 0.001 : 0.999;
+      } else {
+        m.dir = -m.dir;
+        m.t = m.t > 1 ? 1 : 0;
+      }
+    }
+  }
+}
+
+function CityLife({ vehicles, streets }) {
+  const motionRef = useRef(new Map());
+  const vehiclesRef = useRef(vehicles);
+  const streetsRef = useRef(streets);
+  vehiclesRef.current = vehicles;
+  streetsRef.current = streets;
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    let raf;
+    let lastT = performance.now();
+    const loop = (now) => {
+      const dt = Math.min(0.1, (now - lastT) / 1000);
+      lastT = now;
+      stepVehicles(motionRef.current, vehiclesRef.current, streetsRef.current, dt, now);
+      setTick(t => (t + 1) & 0xFFFF);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(raf); motionRef.current.clear(); };
+  }, []);
+
+  return (
+    <g pointerEvents="none">
+      {vehicles.map(v => {
+        const m = motionRef.current.get(v.id);
+        if (!m) return null;
+        const s = streets.find(st => st.id === m.streetId);
+        if (!s) return null;
+        const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+        const len = Math.hypot(dx, dy) || 1;
+        // Position on centerline, then offset to the right side of travel
+        // so opposing-direction vehicles ride opposite sides of the road.
+        const dirX = (m.dir > 0 ? dx : -dx) / len;
+        const dirY = (m.dir > 0 ? dy : -dy) / len;
+        const rx = -dirY, ry = dirX; // perpendicular pointing right of travel
+        const offset = v.kind === 'bus' ? 11 : 9;
+        const x = s.x1 + m.t * dx + rx * offset;
+        const y = s.y1 + m.t * dy + ry * offset;
+        const rot = Math.atan2(dirY, dirX) * 180 / Math.PI;
+        return (
+          <g key={v.id} transform={`translate(${x},${y}) rotate(${rot})`}>
+            <VehicleVisual kind={v.kind} variant={v.variant}/>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 // CONTENT BOUNDS — for fit-to-view
 function getContentBounds(state) {
   const xs = [], ys = [];
@@ -264,6 +395,7 @@ window.CityCanvas = function CityCanvas({
   bumpHistory,
   drawStyle, // string id from DRAW_STYLES
   zoomTick, fitTick, // counters: when these change, run zoom in/out / fit
+  liveMode, // when true, cars/buses animate along the road network
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -688,8 +820,10 @@ window.CityCanvas = function CityCanvas({
               })()}
             </g>
           )}
-          {/* buildings */}
+          {/* buildings — vehicles are skipped here when liveMode is on
+              and rendered by <CityLife> instead. */}
           {state.buildings.map(b => {
+            if (liveMode && VEHICLE_KINDS.has(b.kind)) return null;
             const def = Buildings.getDef(b.kind);
             return (
               <Building
@@ -701,6 +835,13 @@ window.CityCanvas = function CityCanvas({
               />
             );
           })}
+          {/* Animated vehicles */}
+          {liveMode && (
+            <CityLife
+              vehicles={state.buildings.filter(b => VEHICLE_KINDS.has(b.kind))}
+              streets={state.streets}
+            />
+          )}
           {/* protractor overlay */}
           <Protractor it={hoverIntersection}/>
 

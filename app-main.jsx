@@ -64,6 +64,7 @@ function App() {
   const [drawStyle, setDrawStyle] = useStateA('single');
   const [showAngles, setShowAngles] = useStateA(true);
   const [showProtractor, setShowProtractor] = useStateA(true);
+  const [liveMode, setLiveMode] = useStateA(true);
   const [selectedId, setSelectedId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
   const [confirmDialog, setConfirmDialog] = useStateA(null); // { title, message, confirmLabel, danger, onConfirm }
@@ -347,6 +348,7 @@ function App() {
           bumpHistory={bumpHistory}
           zoomTick={zoomTick}
           fitTick={fitTick}
+          liveMode={liveMode}
         />
 
         {/* Title bar overlay */}
@@ -392,6 +394,10 @@ function App() {
           <button className={`tool-btn ${showAngles ? 'active' : ''}`}
                   onClick={() => setShowAngles(!showAngles)} title="Show angle labels">
             📐
+          </button>
+          <button className={`tool-btn ${liveMode ? 'active' : ''}`}
+                  onClick={() => setLiveMode(!liveMode)} title="Bring city to life — cars and buses move around">
+            🚦
           </button>
         </div>
 
