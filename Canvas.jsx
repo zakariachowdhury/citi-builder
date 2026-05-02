@@ -1134,23 +1134,32 @@ function TLBox({ x, y, green }) {
     </g>
   );
 }
-// Two lights per right-angle intersection, one per crossing street, placed
-// perpendicular to their road and offset to opposite quadrants so it's
-// obvious which controls which direction.
+// Two lights per right-angle intersection, placed at OPPOSITE intersection
+// corners (the natural sight line for traffic approaching along each road).
+// Each corner is at intersection_center ± R*perpA ± R*perpB, where perpA/B
+// are unit perpendiculars to each crossing street. Stays clear of the
+// painted road on both sides.
 function TrafficLight({ ix, iy, sA, sB, phase }) {
   const dxA = sA.x2 - sA.x1, dyA = sA.y2 - sA.y1;
   const lenA = Math.hypot(dxA, dyA) || 1;
   const dxB = sB.x2 - sB.x1, dyB = sB.y2 - sB.y1;
   const lenB = Math.hypot(dxB, dyB) || 1;
-  const OFF = 24;
-  // Perpendicular to A (rotated 90° clockwise in screen space)
-  const aPx = -dyA / lenA, aPy = dxA / lenA;
-  // Perpendicular to B (rotated 90° counter-clockwise) — opposite quadrant
-  const bPx =  dyB / lenB, bPy = -dxB / lenB;
+  // Perpendicular (CCW in screen coords): (x,y) -> (y, -x).
+  const pAx =  dyA / lenA, pAy = -dxA / lenA;
+  const pBx =  dyB / lenB, pBy = -dxB / lenB;
+  const R = 22;
   return (
     <g pointerEvents="none">
-      <TLBox x={ix + aPx * OFF} y={iy + aPy * OFF} green={phase === 0}/>
-      <TLBox x={ix + bPx * OFF} y={iy + bPy * OFF} green={phase === 1}/>
+      {/* Light controlling road A — corner toward perpA + perpB */}
+      <TLBox
+        x={ix + pAx * R + pBx * R}
+        y={iy + pAy * R + pBy * R}
+        green={phase === 0}/>
+      {/* Light controlling road B — opposite corner */}
+      <TLBox
+        x={ix - pAx * R - pBx * R}
+        y={iy - pAy * R - pBy * R}
+        green={phase === 1}/>
     </g>
   );
 }
