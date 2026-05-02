@@ -342,9 +342,6 @@ function Protractor({ it }) {
 // On reaching an endpoint they pick a random connected segment (within 12 px)
 // to continue on; if none exist, they reverse. Pauses fire ~5%/s for variety.
 const VEHICLE_KINDS = new Set(['car', 'bus']);
-// Decor-tier buildings that still attract pedestrians (in addition to all
-// REQUIRED civic buildings).
-const PED_DESTINATIONS = new Set(['hospital', 'museum', 'hotel', 'amusement', 'donut']);
 
 const VehicleVisual = React.memo(function VehicleVisual({ kind, variant }) {
   const def = Buildings.getDef(kind);
@@ -432,12 +429,6 @@ function playBusDing() {
 // Phase 0 = streetA green / streetB red. Phase 1 = streetA red / streetB green.
 const LIGHT_CYCLE_MS = 6500;
 function currentLightPhase(now) { return Math.floor(now / LIGHT_CYCLE_MS) % 2; }
-
-// Distance from pt to the closest road centerline (for pedestrian off-road check)
-function distanceToRoad(streets, x, y) {
-  const near = projectClosest(streets, x, y);
-  return near ? near.dist : Infinity;
-}
 
 // Half-length (along travel) of each rendered vehicle, used to compute
 // edge-to-edge gap so a car doesn't park on top of a longer bus's rear.
@@ -595,81 +586,128 @@ function stepVehicles(motion, vehicles, streets, busStops, lightInfo, occupancy,
 const SKIN_COLORS = ['#f4d4b6','#e3b896','#c9956b','#9a6e4a','#7a4f30','#dab28e'];
 const SHIRT_COLORS = ['#3b6fb5','#d94c3a','#4f8b4a','#e7b94a','#8a5fb0','#de8348','#d97ba0','#5a8aa0'];
 
-// Pick a destination near (cx, cy). Prefers anchors within `maxDist` so peds
-// don't trek across the entire map; falls back to any anchor only if nothing
-// is in range.
-function pickWaypoint(anchors, cx, cy, maxDist = 240) {
-  if (!anchors.length) return null;
-  const nearby = [];
-  for (const a of anchors) {
-    if (Math.hypot(a.x - cx, a.y - cy) < maxDist) nearby.push(a);
-  }
-  const pool = nearby.length ? nearby : anchors;
-  const a = pool[Math.floor(Math.random() * pool.length)];
-  return {
-    x: a.x + (Math.random() - 0.5) * 50,
-    y: a.y + (Math.random() - 0.5) * 50,
-  };
-}
+// Sidewalk offset (perpendicular distance from road centerline) where
+// pedestrians walk. The road's full painted width is ~36 px so 23 keeps
+// peds clearly OFF the asphalt and onto the curb.
+const SIDEWALK_OFFSET = 23;
 
-const PED_ROAD_THRESHOLD = 14; // pixels — within this counts as "on the road"
+function stepPedestrians(peds, streets, lightInfo, dt, now) {
+  if (!streets.length) { peds.length = 0; return; }
+  const TARGET = Math.min(14, Math.max(4, streets.length));
 
-function stepPedestrians(peds, anchors, streets, dt, now) {
-  if (anchors.length < 2) { peds.length = 0; return; }
-  const TARGET = Math.min(10, Math.max(3, Math.floor(anchors.length * 0.55)));
+  // Spawn — assigned to a random street segment + random sidewalk side.
   while (peds.length < TARGET) {
-    const start = pickWaypoint(anchors, 900, 550);
-    if (!start) break;
-    const end = pickWaypoint(anchors, start.x, start.y);
+    const street = streets[Math.floor(Math.random() * streets.length)];
     peds.push({
       id: `p-${now.toFixed(0)}-${peds.length}-${Math.random().toString(36).slice(2,5)}`,
-      x: start.x, y: start.y,
-      tx: end ? end.x : start.x,
-      ty: end ? end.y : start.y,
-      speed: 18 + Math.random() * 18,
+      streetId: street.id,
+      t: Math.random(),
+      dir: Math.random() < 0.5 ? 1 : -1,
+      side: Math.random() < 0.5 ? 1 : -1,
+      speed: 16 + Math.random() * 12,
       skin: SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)],
       shirt: SHIRT_COLORS[Math.floor(Math.random() * SHIRT_COLORS.length)],
       stride: 0,
       strideAt: now,
       pauseUntil: 0,
-      crossing: false,
+      // For an animated cross between sidewalks
+      crossFrom: 0, crossTo: 0, crossT: 0,
+      x: 0, y: 0,
     });
   }
   if (peds.length > TARGET) peds.length = TARGET;
 
   for (const p of peds) {
-    if (p.pauseUntil > now) continue;
-    if (Math.random() < 0.04 * dt) {
-      p.pauseUntil = now + 800 + Math.random() * 2200;
-      continue;
+    // Animate active road-cross
+    if (p.crossT > 0) {
+      p.crossT -= dt / 1.4; // ~1.4s to cross
+      if (p.crossT <= 0) {
+        p.crossT = 0;
+        p.side = p.crossTo;
+      }
     }
-    const dx = p.tx - p.x, dy = p.ty - p.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 4) {
-      const next = pickWaypoint(anchors, p.x, p.y);
-      if (next) { p.tx = next.x; p.ty = next.y; }
-      continue;
-    }
-    const baseStep = Math.min(p.speed * dt, dist);
-    const ux = dx / dist, uy = dy / dist;
-    const nx = p.x + ux * baseStep;
-    const ny = p.y + uy * baseStep;
 
-    // Road avoidance: pause to "look both ways" before stepping onto a road,
-    // then sprint across. Once clear of the road, reset the crossing flag.
-    const onRoadNow = distanceToRoad(streets, p.x, p.y) < PED_ROAD_THRESHOLD;
-    const onRoadNext = distanceToRoad(streets, nx, ny) < PED_ROAD_THRESHOLD;
-    if (!onRoadNow && onRoadNext && !p.crossing) {
-      p.pauseUntil = now + 900 + Math.random() * 900;
-      p.crossing = true;
-      continue;
-    }
-    if (onRoadNow && !onRoadNext) p.crossing = false;
+    if (p.pauseUntil > now) { /* still update render position below */ }
+    else {
+      // Occasional standing pause (chatting, looking around)
+      if (Math.random() < 0.04 * dt) {
+        p.pauseUntil = now + 800 + Math.random() * 2000;
+      } else {
+        const street = streets.find(s => s.id === p.streetId);
+        if (!street) {
+          p.streetId = streets[Math.floor(Math.random() * streets.length)].id;
+          p.t = Math.random();
+          continue;
+        }
+        const dx = street.x2 - street.x1, dy = street.y2 - street.y1;
+        const len = Math.hypot(dx, dy) || 1;
+        p.t += p.dir * (p.speed * dt) / len;
 
-    const sprintMul = p.crossing ? 1.7 : 1;
-    p.x = p.x + ux * baseStep * sprintMul;
-    p.y = p.y + uy * baseStep * sprintMul;
-    if (now - p.strideAt > (p.crossing ? 200 : 320)) {
+        if (p.t > 1 || p.t < 0) {
+          // Reached an endpoint — choose: continue onto a connected street,
+          // reverse, or cross (only if the light is red for this street).
+          const reachedEnd = p.t > 1 ? 2 : 1;
+          const cx = reachedEnd === 2 ? street.x2 : street.x1;
+          const cy = reachedEnd === 2 ? street.y2 : street.y1;
+          const conns = [];
+          for (const o of streets) {
+            if (o.id === street.id) continue;
+            if (Math.hypot(o.x1 - cx, o.y1 - cy) < 14) conns.push({ street: o, end: 1 });
+            if (Math.hypot(o.x2 - cx, o.y2 - cy) < 14) conns.push({ street: o, end: 2 });
+          }
+          // Is it safe to cross our current street here? Only at a
+          // right-angle intersection AND only when our street has a red
+          // light (cars stopped).
+          let canCross = false;
+          if (lightInfo && lightInfo.byStreet && p.crossT === 0) {
+            const lights = lightInfo.byStreet.get(p.streetId) || [];
+            for (const l of lights) {
+              if (Math.abs(l.tInt - p.t) < 0.06) {
+                const greenForCars = l.isStreetA ? lightInfo.phase === 0 : lightInfo.phase === 1;
+                if (!greenForCars) { canCross = true; break; }
+              }
+            }
+          }
+
+          const roll = Math.random();
+          if (canCross && roll < 0.35) {
+            // Start an animated cross to the other sidewalk
+            p.crossFrom = p.side;
+            p.crossTo = -p.side;
+            p.crossT = 1;
+            p.t = p.t > 1 ? 1 : 0;
+            p.dir = -p.dir;
+          } else if (conns.length && roll < 0.7) {
+            const next = conns[Math.floor(Math.random() * conns.length)];
+            p.streetId = next.street.id;
+            p.dir = next.end === 1 ? 1 : -1;
+            p.t = next.end === 1 ? 0.001 : 0.999;
+            // Maybe try the inside corner sidewalk
+            if (Math.random() < 0.4) p.side = -p.side;
+          } else {
+            p.dir = -p.dir;
+            p.t = p.t > 1 ? 1 : 0;
+          }
+        }
+      }
+    }
+
+    // Render position: along current street at t, offset perpendicular
+    // by SIDEWALK_OFFSET on `side`. While crossing, side is interpolated.
+    const street = streets.find(s => s.id === p.streetId);
+    if (!street) continue;
+    const dx2 = street.x2 - street.x1, dy2 = street.y2 - street.y1;
+    const len2 = Math.hypot(dx2, dy2) || 1;
+    const ux = dx2 / len2, uy = dy2 / len2;
+    const renderSide = p.crossT > 0
+      ? p.crossFrom * p.crossT + p.crossTo * (1 - p.crossT)
+      : p.side;
+    const perpX = -uy * renderSide;
+    const perpY =  ux * renderSide;
+    p.x = street.x1 + p.t * dx2 + perpX * SIDEWALK_OFFSET;
+    p.y = street.y1 + p.t * dy2 + perpY * SIDEWALK_OFFSET;
+
+    if (p.pauseUntil <= now && now - p.strideAt > (p.crossT > 0 ? 220 : 320)) {
       p.stride = p.stride ? 0 : 1;
       p.strideAt = now;
     }
@@ -1002,7 +1040,7 @@ function stepDirectedCars(cars, streets, occupancy, dt, now, onArrived) {
   }
 }
 
-function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, trafficLights, soundOn, dispatches, onDispatchDone }) {
+function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, lightInfo, trafficLights, soundOn, dispatches, onDispatchDone }) {
   const motionRef = useRef(new Map());
   const pedRef = useRef([]);
   const fireTrucksRef = useRef([]);
@@ -1013,7 +1051,7 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
   const policeCooldownRef = useRef(35); // first police patrol after 35s
   // Keep latest props accessible from the RAF loop without re-subscribing.
   const propsRef = useRef({});
-  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, soundOn, dispatches, onDispatchDone };
+  propsRef.current = { vehicles, streets, busStops, fireDepts, policeStations, lightInfo, soundOn, dispatches, onDispatchDone };
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -1059,7 +1097,7 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
         else if (kind === 'bus') playBusDing();
       }) : null;
       stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, lInfo, occ, sound, dt, now);
-      stepPedestrians(pedRef.current, p.peopleSeeds, p.streets, dt, now);
+      stepPedestrians(pedRef.current, p.streets, lInfo, dt, now);
       stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, sound, dt, now, FIRE_CFG);
       stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, sound, dt, now, POLICE_CFG);
       stepDirectedCars(directedRef.current, p.streets, occ, dt, now, p.onDispatchDone);
@@ -1838,7 +1876,6 @@ window.CityCanvas = function CityCanvas({
               vehicles={state.buildings.filter(b => VEHICLE_KINDS.has(b.kind))}
               streets={state.streets}
               busStops={state.buildings.filter(b => b.kind === 'busStop')}
-              peopleSeeds={state.buildings.filter(b => Buildings.REQUIRED.some(r => r.kind === b.kind) || PED_DESTINATIONS.has(b.kind))}
               fireDepts={state.buildings.filter(b => b.kind === 'fire')}
               policeStations={state.buildings.filter(b => b.kind === 'police')}
               lightInfo={{ byStreet: lightData.byStreet }}
