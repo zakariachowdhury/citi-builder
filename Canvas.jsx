@@ -1123,13 +1123,34 @@ function Crosswalks({ items, streets }) {
 
 // ============ TRAFFIC LIGHTS ============
 // Drawn at right-angle intersections; cycle in sync with currentLightPhase().
-function TrafficLight({ x, y, phase }) {
-  const greenForA = phase === 0;
+// One small upright light box (red on top, green on bottom).
+function TLBox({ x, y, green }) {
   return (
-    <g transform={`translate(${x + 14},${y - 14})`} pointerEvents="none">
-      <rect x="-3" y="-7" width="6" height="14" rx="1.2" fill="#1a1a1a" stroke="#2a2418" strokeWidth="0.5"/>
-      <circle cx="0" cy="-4" r="1.9" fill={greenForA ? '#440000' : '#ff3838'}/>
-      <circle cx="0" cy="4"  r="1.9" fill={greenForA ? '#3aff3a' : '#003a00'}/>
+    <g transform={`translate(${x},${y})`}>
+      <rect x="-3" y="-8" width="6" height="16" rx="1.4"
+            fill="#1a1a1a" stroke="#2a2418" strokeWidth="0.5"/>
+      <circle cx="0" cy="-4" r="2" fill={green ? '#440000' : '#ff3838'}/>
+      <circle cx="0" cy="4"  r="2" fill={green ? '#3aff3a' : '#003a00'}/>
+    </g>
+  );
+}
+// Two lights per right-angle intersection, one per crossing street, placed
+// perpendicular to their road and offset to opposite quadrants so it's
+// obvious which controls which direction.
+function TrafficLight({ ix, iy, sA, sB, phase }) {
+  const dxA = sA.x2 - sA.x1, dyA = sA.y2 - sA.y1;
+  const lenA = Math.hypot(dxA, dyA) || 1;
+  const dxB = sB.x2 - sB.x1, dyB = sB.y2 - sB.y1;
+  const lenB = Math.hypot(dxB, dyB) || 1;
+  const OFF = 24;
+  // Perpendicular to A (rotated 90° clockwise in screen space)
+  const aPx = -dyA / lenA, aPy = dxA / lenA;
+  // Perpendicular to B (rotated 90° counter-clockwise) — opposite quadrant
+  const bPx =  dyB / lenB, bPy = -dxB / lenB;
+  return (
+    <g pointerEvents="none">
+      <TLBox x={ix + aPx * OFF} y={iy + aPy * OFF} green={phase === 0}/>
+      <TLBox x={ix + bPx * OFF} y={iy + bPy * OFF} green={phase === 1}/>
     </g>
   );
 }
@@ -1363,7 +1384,7 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
       ))}
       {/* traffic lights at right-angle intersections */}
       {trafficLights && trafficLights.map((t, i) => (
-        <TrafficLight key={`tl-${i}`} x={t.x} y={t.y} phase={phase}/>
+        <TrafficLight key={`tl-${i}`} ix={t.x} iy={t.y} sA={t.sA} sB={t.sB} phase={phase}/>
       ))}
     </g>
   );
@@ -1435,7 +1456,7 @@ window.CityCanvas = function CityCanvas({
       if (!byStreet.has(it.streetB)) byStreet.set(it.streetB, []);
       byStreet.get(it.streetA).push({ tInt: tA, isStreetA: true });
       byStreet.get(it.streetB).push({ tInt: tB, isStreetA: false });
-      lights.push({ x: it.x, y: it.y });
+      lights.push({ x: it.x, y: it.y, sA, sB });
     }
     return { byStreet, lights };
   }, [intersections, state.streets]);
