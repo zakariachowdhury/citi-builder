@@ -1,0 +1,804 @@
+// Canvas.jsx — the SVG map. Loaded as Babel JSX; exposes window.CityCanvas.
+const { useRef, useState, useEffect, useMemo, useCallback } = React;
+
+// SVG paper filter for "rough" look
+function PaperDefs() {
+  return (
+    <defs>
+      <filter id="rough" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="3"/>
+        <feDisplacementMap in="SourceGraphic" scale="1.4"/>
+      </filter>
+      <filter id="paper-grain" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
+        <feColorMatrix values="0 0 0 0 0.85  0 0 0 0 0.82  0 0 0 0 0.74  0 0 0 0.04 0"/>
+      </filter>
+      <pattern id="grass" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+        <rect width="20" height="20" fill="#ffffff"/>
+        <circle cx="4" cy="6" r="0.6" fill="#cfc6ad" opacity="0.45"/>
+        <circle cx="14" cy="13" r="0.5" fill="#cfc6ad" opacity="0.45"/>
+      </pattern>
+    </defs>
+  );
+}
+
+// Render the road network in layers, so crossings look like real roads:
+// pass 1: thick dark borders (all streets)  → merges into a unified dark outline
+// pass 2: lighter asphalt fill (all streets) → erases the borders at crossings
+// pass 3: dashed centerlines, BUT broken at every intersection
+// pass 4: invisible click-targets per street (so the user can still select)
+function RoadNetwork({ streets, intersections, selectedId, onStreetClick, onStreetDouble, onEndpointMouseDown, hoverEndpoint }) {
+  // For each street, find all intersection points and compute the "t" parameter
+  // (0..1) along the segment so we know where to break the centerline.
+  const breaks = useMemo(() => {
+    const map = new Map(); // streetId -> array of t values (sorted)
+    streets.forEach(s => map.set(s.id, []));
+    intersections.forEach(it => {
+      // recover t for streetA and streetB
+      const sa = streets.find(s => s.id === it.streetA);
+      const sb = streets.find(s => s.id === it.streetB);
+      if (sa) {
+        const len = Math.hypot(sa.x2 - sa.x1, sa.y2 - sa.y1);
+        const t = len > 0
+          ? Math.hypot(it.x - sa.x1, it.y - sa.y1) / len
+          : 0;
+        map.get(sa.id).push(t);
+      }
+      if (sb) {
+        const len = Math.hypot(sb.x2 - sb.x1, sb.y2 - sb.y1);
+        const t = len > 0
+          ? Math.hypot(it.x - sb.x1, it.y - sb.y1) / len
+          : 0;
+        map.get(sb.id).push(t);
+      }
+    });
+    map.forEach((arr, id) => arr.sort((a, b) => a - b));
+    return map;
+  }, [streets, intersections]);
+
+  // Build dashed-centerline sub-segments for one street, skipping a small
+  // gap (in pixels) around each intersection.
+  function centerSubsegments(s) {
+    const ts = breaks.get(s.id) || [];
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (len === 0) return [];
+    const GAP_PX = 22; // half-gap on each side of intersection
+    const halfT = GAP_PX / len;
+    // build kept intervals from [0,1], removing [t-half, t+half] for each break
+    let intervals = [[0, 1]];
+    ts.forEach(t => {
+      const lo = Math.max(0, t - halfT);
+      const hi = Math.min(1, t + halfT);
+      const next = [];
+      intervals.forEach(([a, b]) => {
+        if (hi <= a || lo >= b) { next.push([a, b]); return; }
+        if (lo > a) next.push([a, lo]);
+        if (hi < b) next.push([hi, b]);
+      });
+      intervals = next;
+    });
+    return intervals
+      .filter(([a, b]) => b - a > 0.01)
+      .map(([a, b]) => ({
+        x1: s.x1 + a * (s.x2 - s.x1),
+        y1: s.y1 + a * (s.y2 - s.y1),
+        x2: s.x1 + b * (s.x2 - s.x1),
+        y2: s.y1 + b * (s.y2 - s.y1),
+      }));
+  }
+
+  return (
+    <g className="road-network">
+      {/* PASS 1: dark borders (drawn under everything else) */}
+      <g>
+        {streets.map(s => (
+          <line key={'b-'+s.id}
+            x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+            stroke="#9a9a9a" strokeWidth="36" strokeLinecap="round"
+            pointerEvents="none"/>
+        ))}
+      </g>
+      {/* PASS 2: asphalt fill — covers borders at crossings, unifying network */}
+      <g>
+        {streets.map(s => (
+          <line key={'f-'+s.id}
+            x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+            stroke="#dcdcdc" strokeWidth="30" strokeLinecap="round"
+            pointerEvents="none"/>
+        ))}
+      </g>
+      {/* PASS 3: dashed centerlines, broken at intersections */}
+      <g>
+        {streets.flatMap(s => centerSubsegments(s).map((seg, i) => (
+          <line key={`c-${s.id}-${i}`}
+            x1={seg.x1} y1={seg.y1} x2={seg.x2} y2={seg.y2}
+            stroke="#ffffff" strokeWidth="2.5" strokeDasharray="12 9"
+            opacity="0.95" pointerEvents="none"/>
+        )))}
+      </g>
+      {/* PASS 4: street name labels */}
+      <g>
+        {streets.map(s => {
+          if (!s.name) return null;
+          const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+          if (len < 80) return null;
+          const angle = Math.atan2(s.y2 - s.y1, s.x2 - s.x1) * 180 / Math.PI;
+          let textAngle = angle;
+          if (textAngle > 90) textAngle -= 180;
+          if (textAngle < -90) textAngle += 180;
+          const midX = (s.x1 + s.x2) / 2;
+          const midY = (s.y1 + s.y2) / 2;
+          const labelW = Math.max(60, (s.name || '').length * 9 + 14);
+          return (
+            <g key={'lbl-'+s.id}
+              transform={`translate(${midX},${midY}) rotate(${textAngle})`}
+              pointerEvents="none">
+              <rect x={-labelW/2} y={-12} width={labelW} height={20} rx={6}
+                    className="street-name-bg"/>
+              <text className="street-name" textAnchor="middle" dy="3">{s.name}</text>
+            </g>
+          );
+        })}
+      </g>
+      {/* PASS 5: invisible hit-targets for selection / dbl-click rename */}
+      <g>
+        {streets.map(s => {
+          const sel = selectedId?.kind === 'street' && selectedId.id === s.id;
+          return (
+            <g key={'hit-'+s.id}>
+              {sel && (
+                <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                      stroke="#3b6fb5" strokeWidth="44" strokeLinecap="round"
+                      opacity="0.18" pointerEvents="none"/>
+              )}
+              <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                    stroke="transparent" strokeWidth="36" strokeLinecap="round"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => onStreetClick(s, e)}
+                    onDoubleClick={(e) => onStreetDouble(s, e)}/>
+              {sel && onEndpointMouseDown && (
+                <g>
+                  <circle cx={s.x1} cy={s.y1} r="9" fill="#fff" stroke="#3b6fb5" strokeWidth="2.5"
+                          style={{ cursor: 'move' }}
+                          onMouseDown={(e) => { e.stopPropagation(); onEndpointMouseDown(s.id, 1, e); }}/>
+                  <circle cx={s.x2} cy={s.y2} r="9" fill="#fff" stroke="#3b6fb5" strokeWidth="2.5"
+                          style={{ cursor: 'move' }}
+                          onMouseDown={(e) => { e.stopPropagation(); onEndpointMouseDown(s.id, 2, e); }}/>
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </g>
+      {hoverEndpoint && (
+        <g pointerEvents="none">
+          <circle cx={hoverEndpoint.x} cy={hoverEndpoint.y} r="14"
+                  fill="none" stroke="#d97757" strokeWidth="2.5" strokeDasharray="4 3" opacity="0.9"/>
+        </g>
+      )}
+    </g>
+  );
+}
+
+function Intersection({ it, showAngles }) {
+  if (!showAngles) return null;
+  if (it.type === 'right') {
+    return (
+      <g pointerEvents="none">
+        <circle cx={it.x} cy={it.y} r="2.5" fill="#3b6fb5"/>
+        <g transform={`translate(${it.x + 12}, ${it.y - 12})`}>
+          <rect x="-3" y="-11" width="34" height="15" rx="3"
+                fill="rgba(255,255,255,0.95)" stroke="#3b6fb5" strokeWidth="1"/>
+          <text x="3" y="0" className="angle-label" fill="#3b6fb5">⊥ 90°</text>
+        </g>
+      </g>
+    );
+  }
+  // Non-right: show BOTH the acute and obtuse pair (they sum to 180°)
+  const acuteDeg = Math.min(it.deg, 180 - it.deg);
+  const obtuseDeg = 180 - acuteDeg;
+  return (
+    <g pointerEvents="none">
+      <circle cx={it.x} cy={it.y} r="2.5" fill="#8a5fb0"/>
+      <g transform={`translate(${it.x + 12}, ${it.y - 12})`}>
+        <rect x="-3" y="-11" width="46" height="15" rx="3"
+              fill="rgba(255,255,255,0.95)" stroke="#d94c3a" strokeWidth="1"/>
+        <text x="3" y="0" className="angle-label" fill="#d94c3a">◁ {Math.round(acuteDeg)}°</text>
+      </g>
+      <g transform={`translate(${it.x + 12}, ${it.y + 8})`}>
+        <rect x="-3" y="-11" width="46" height="15" rx="3"
+              fill="rgba(255,255,255,0.95)" stroke="#8a5fb0" strokeWidth="1"/>
+        <text x="3" y="0" className="angle-label" fill="#8a5fb0">◆ {Math.round(obtuseDeg)}°</text>
+      </g>
+    </g>
+  );
+}
+
+// Building rendered via inline SVG markup
+function Building({ b, def, selected, onMouseDown, onClick, onDoubleClick }) {
+  if (!def) return null;
+  const inner = def.draw(b.variant || 0);
+  return (
+    <g
+      transform={`translate(${b.x},${b.y}) rotate(${b.rot || 0})`}
+      onMouseDown={onMouseDown}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      style={{ cursor: 'grab' }}
+    >
+      {selected && (
+        <rect x={-def.size/2 - 4} y={-def.size/2 - 4}
+              width={def.size + 8} height={def.size + 8}
+              fill="none" stroke="#3b6fb5" strokeWidth="2"
+              strokeDasharray="4 3" rx="6"/>
+      )}
+      <g dangerouslySetInnerHTML={{ __html: inner }}/>
+      {b.label && def.size >= 30 && (
+        <text className="building-label" y={def.size/2 + 13}>{b.label}</text>
+      )}
+    </g>
+  );
+}
+
+// Protractor overlay — kept for completeness but no longer used.
+function Protractor({ it }) {
+  return null;
+}
+
+// CONTENT BOUNDS — for fit-to-view
+function getContentBounds(state) {
+  const xs = [], ys = [];
+  state.streets.forEach(s => { xs.push(s.x1, s.x2); ys.push(s.y1, s.y2); });
+  state.buildings.forEach(b => { xs.push(b.x - 30, b.x + 30); ys.push(b.y - 30, b.y + 30); });
+  if (!xs.length) return { x: 100, y: 100, w: 1600, h: 900 };
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+window.CityCanvas = function CityCanvas({
+  state, setState, tool, setTool,
+  showAngles, showProtractor,
+  onPaletteDrop, eraserMode,
+  selectedId, setSelectedId,
+  bumpHistory,
+  drawStyle, // string id from DRAW_STYLES
+  zoomTick, fitTick, // counters: when these change, run zoom in/out / fit
+}) {
+  const svgRef = useRef(null);
+  const wrapRef = useRef(null);
+  const [view, setView] = useState({ x: 0, y: 0, scale: 0.7 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef(null);
+  const [hoverIntersection, setHoverIntersection] = useState(null);
+  const [editName, setEditName] = useState(null);
+  const dragRef = useRef(null);
+  const endpointDragRef = useRef(null); // { streetId, end: 1|2 }
+  const [drawPreview, setDrawPreview] = useState(null);
+
+  const intersections = useMemo(() => Geom.findIntersections(state.streets), [state.streets]);
+
+  // Find the closest street endpoint to a world-space point. Returns
+  // { x, y, streetId, end: 1|2 } if within `radius` px in world coords, else null.
+  function closestEndpoint(wx, wy, radius = 26, ignoreId = null) {
+    let best = null, bestD = radius;
+    state.streets.forEach(s => {
+      if (s.id === ignoreId) return;
+      [{ end: 1, x: s.x1, y: s.y1 }, { end: 2, x: s.x2, y: s.y2 }].forEach(p => {
+        const d = Math.hypot(p.x - wx, p.y - wy);
+        if (d < bestD) { bestD = d; best = { x: p.x, y: p.y, streetId: s.id, end: p.end }; }
+      });
+    });
+    return best;
+  }
+
+  const [hoverEndpoint, setHoverEndpoint] = useState(null); // {x,y} for snap indicator
+  const [angleHud, setAngleHud] = useState(null); // {x,y,tx,ty,deg,snapped}
+
+  // Auto-fit on initial mount and whenever the canvas resizes — keeps the
+  // starter pattern nicely centered no matter the viewport.
+  useEffect(() => {
+    let didFirstFit = false;
+    function fit() {
+      const svg = svgRef.current;
+      if (!svg) return;
+      // Use the SVG's actual rendered drawing area (in viewBox coords this is W×H)
+      const W = 1800, H = 1100;
+      const padding = 80;
+      const b = getContentBounds(state);
+      const sx = (W - padding * 2) / (b.w + 80);
+      const sy = (H - padding * 2) / (b.h + 80);
+      const ns = Math.max(0.4, Math.min(2, Math.min(sx, sy)));
+      setView({
+        scale: ns,
+        x: padding + (W - padding*2 - b.w * ns) / 2 - b.x * ns,
+        y: padding + (H - padding*2 - b.h * ns) / 2 - b.y * ns,
+      });
+      didFirstFit = true;
+    }
+    const t1 = setTimeout(fit, 80);
+    const t2 = setTimeout(() => { if (!didFirstFit) fit(); }, 400);
+    const ro = new ResizeObserver(() => { if (!didFirstFit) fit(); });
+    if (wrapRef.current) ro.observe(wrapRef.current);
+    return () => { clearTimeout(t1); clearTimeout(t2); ro.disconnect(); };
+    // eslint-disable-next-line
+  }, []);
+
+  // Convert client coords to SVG coords (in world space — accounting for view)
+  function toWorld(clientX, clientY) {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const inv = ctm.inverse();
+    const p = pt.matrixTransform(inv);
+    // p is in viewBox space; convert to world by undoing view transform
+    return {
+      x: (p.x - view.x) / view.scale,
+      y: (p.y - view.y) / view.scale,
+    };
+  }
+
+  // ZOOM BUTTONS
+  useEffect(() => {
+    if (zoomTick === undefined || zoomTick === 0) return;
+    const dir = zoomTick > 0 ? 1 : -1;
+    const factor = dir > 0 ? 1.2 : 1/1.2;
+    setView(v => {
+      const ns = Math.max(0.2, Math.min(3, v.scale * factor));
+      // zoom around viewBox center
+      const W = 1800, H = 1100;
+      const cx = W / 2, cy = H / 2;
+      const wx = (cx - v.x) / v.scale;
+      const wy = (cy - v.y) / v.scale;
+      return {
+        scale: ns,
+        x: cx - wx * ns,
+        y: cy - wy * ns,
+      };
+    });
+  }, [zoomTick]);
+
+  // FIT TO VIEW
+  useEffect(() => {
+    if (!fitTick) return;
+    const W = 1800, H = 1100;
+    const padding = 80;
+    const b = getContentBounds(state);
+    const sx = (W - padding * 2) / (b.w + 80);
+    const sy = (H - padding * 2) / (b.h + 80);
+    const ns = Math.max(0.4, Math.min(2, Math.min(sx, sy)));
+    setView({
+      scale: ns,
+      x: padding + (W - padding*2 - b.w * ns) / 2 - b.x * ns,
+      y: padding + (H - padding*2 - b.h * ns) / 2 - b.y * ns,
+    });
+  }, [fitTick]);
+
+  // Pan with middle/right mouse OR with pan tool
+  function onMouseDown(e) {
+    if (e.target.closest('[data-no-pan]')) return;
+    // Endpoint dragging in select mode (only the bg svg gets here; endpoints
+    // have their own onMouseDown that calls beginEndpointDrag()).
+    // Draw tool: start a road
+    if (tool === 'draw' && e.button === 0) {
+      const p = toWorld(e.clientX, e.clientY);
+      // snap start to existing endpoint if close
+      const snap = closestEndpoint(p.x, p.y, 30);
+      const sp = snap || p;
+      setDrawPreview({ x1: sp.x, y1: sp.y, x2: sp.x, y2: sp.y, snapStart: !!snap });
+      return;
+    }
+    if (tool === 'pan' || e.button === 1 || e.button === 2) {
+      setIsPanning(true);
+      panStart.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+      e.preventDefault();
+    }
+  }
+  function onMouseMove(e) {
+    if (isPanning && panStart.current) {
+      setView(v => ({ ...v,
+        x: panStart.current.vx + (e.clientX - panStart.current.x),
+        y: panStart.current.vy + (e.clientY - panStart.current.y),
+      }));
+    }
+    if (drawPreview) {
+      const p = toWorld(e.clientX, e.clientY);
+      // Snap end to existing endpoint
+      let snapEnd = closestEndpoint(p.x, p.y, 30);
+      let { x1, y1 } = drawPreview;
+      let x2 = snapEnd ? snapEnd.x : p.x;
+      let y2 = snapEnd ? snapEnd.y : p.y;
+      if (e.shiftKey && !snapEnd) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const ang = Math.atan2(dy, dx);
+        const snap = Math.round(ang / (Math.PI/12)) * (Math.PI/12); // 15° steps
+        const len = Math.hypot(dx, dy);
+        x2 = x1 + Math.cos(snap) * len;
+        y2 = y1 + Math.sin(snap) * len;
+      }
+      setHoverEndpoint(snapEnd ? { x: snapEnd.x, y: snapEnd.y } : null);
+      setDrawPreview({ ...drawPreview, x2, y2, snapEnd: !!snapEnd });
+    }
+    // Endpoint dragging in select mode
+    if (endpointDragRef.current) {
+      const p = toWorld(e.clientX, e.clientY);
+      const { streetId, end } = endpointDragRef.current;
+      const street = state.streets.find(st => st.id === streetId);
+      // Anchor = the OTHER endpoint of this street (the one we're not dragging)
+      const anchor = end === 1 ? { x: street.x2, y: street.y2 } : { x: street.x1, y: street.y1 };
+      // Endpoint-snap takes priority over angle-snap when close
+      const epSnap = closestEndpoint(p.x, p.y, 30, streetId);
+      let tx = epSnap ? epSnap.x : p.x;
+      let ty = epSnap ? epSnap.y : p.y;
+      let snappedAngle = null;
+      // Shift → snap angle to nearest 15°, preserve length toward the cursor
+      if (e.shiftKey && !epSnap) {
+        const dx = p.x - anchor.x, dy = p.y - anchor.y;
+        const len = Math.hypot(dx, dy) || 1;
+        let deg = Math.atan2(dy, dx) * 180 / Math.PI;
+        const snap15 = Math.round(deg / 15) * 15;
+        const rad = snap15 * Math.PI / 180;
+        tx = anchor.x + Math.cos(rad) * len;
+        ty = anchor.y + Math.sin(rad) * len;
+        snappedAngle = ((snap15 % 360) + 360) % 360;
+      }
+      setHoverEndpoint(epSnap ? { x: epSnap.x, y: epSnap.y } : null);
+      // Live angle indicator (from anchor toward dragged end)
+      {
+        const dxA = tx - anchor.x, dyA = ty - anchor.y;
+        let degA = Math.atan2(dyA, dxA) * 180 / Math.PI;
+        if (degA < 0) degA += 360;
+        setAngleHud({ x: anchor.x, y: anchor.y, tx, ty,
+          deg: Math.round(degA), snapped: snappedAngle != null });
+      }
+      setState(s => ({
+        ...s,
+        streets: s.streets.map(st => st.id === streetId
+          ? (end === 1 ? { ...st, x1: tx, y1: ty } : { ...st, x2: tx, y2: ty })
+          : st)
+      }));
+    }
+    if (dragRef.current) {
+      const p = toWorld(e.clientX, e.clientY);
+      const dx = p.x - dragRef.current.startSvg.x;
+      const dy = p.y - dragRef.current.startSvg.y;
+      const id = dragRef.current.id;
+      setState(s => ({
+        ...s,
+        buildings: s.buildings.map(b => b.id === id
+          ? { ...b, x: dragRef.current.origX + dx, y: dragRef.current.origY + dy }
+          : b)
+      }));
+    }
+  }
+  function onMouseUp(e) {
+    setIsPanning(false);
+    panStart.current = null;
+    if (dragRef.current) dragRef.current = null;
+    if (endpointDragRef.current) { endpointDragRef.current = null; setHoverEndpoint(null); setAngleHud(null); }
+    if (drawPreview) {
+      const len = Math.hypot(drawPreview.x2 - drawPreview.x1, drawPreview.y2 - drawPreview.y1);
+      if (len > 30) {
+        bumpHistory();
+        const style = window.DRAW_STYLES?.find(d => d.id === drawStyle) || {};
+        const segs = style.expand
+          ? style.expand(drawPreview)
+          : [{x1:drawPreview.x1,y1:drawPreview.y1,x2:drawPreview.x2,y2:drawPreview.y2}];
+        setState(s => ({
+          ...s,
+          streets: [
+            ...s.streets,
+            ...segs.map((seg, i) => ({
+              ...seg,
+              id: `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${i}`,
+              name: '',
+            }))
+          ]
+        }));
+      }
+      setDrawPreview(null);
+    }
+  }
+  function onContextMenu(e) { e.preventDefault(); }
+
+  function onDrop(e) {
+    e.preventDefault();
+    const kind = e.dataTransfer.getData('text/building');
+    if (!kind) return;
+    const p = toWorld(e.clientX, e.clientY);
+    onPaletteDrop(kind, p.x, p.y);
+  }
+  function onDragOver(e) { e.preventDefault(); }
+
+  function onSvgMove(e) {
+    // protractor-on-hover removed — intersections show their angle as a static label.
+  }
+
+  function handleStreetClick(s, e) {
+    e.stopPropagation();
+    if (eraserMode) {
+      bumpHistory();
+      setState(st => ({ ...st, streets: st.streets.filter(x => x.id !== s.id) }));
+      return;
+    }
+    setSelectedId({ kind: 'street', id: s.id });
+  }
+  function handleStreetDouble(s, e) {
+    e.stopPropagation();
+    setEditName({ kind: 'street', id: s.id, value: s.name || '',
+      x: e.clientX, y: e.clientY });
+  }
+  function handleBuildingMouseDown(b, e) {
+    e.stopPropagation();
+    if (eraserMode) {
+      bumpHistory();
+      setState(st => ({ ...st, buildings: st.buildings.filter(x => x.id !== b.id) }));
+      return;
+    }
+    if (tool !== 'pan' && tool !== 'draw') {
+      bumpHistory();
+      const p = toWorld(e.clientX, e.clientY);
+      dragRef.current = { id: b.id, startSvg: p, origX: b.x, origY: b.y };
+      setSelectedId({ kind: 'building', id: b.id });
+    }
+  }
+  function handleBuildingDouble(b, e) {
+    e.stopPropagation();
+    if (b.kind === 'home' || Buildings.DECOR.find(d => d.kind === b.kind)) return;
+    setEditName({ kind: 'building', id: b.id, value: b.label || '',
+      x: e.clientX, y: e.clientY });
+  }
+
+  function handleBgClick() {
+    setSelectedId(null);
+    setEditName(null);
+  }
+
+  function commitName() {
+    if (!editName) return;
+    bumpHistory();
+    if (editName.kind === 'street') {
+      setState(s => ({ ...s,
+        streets: s.streets.map(st => st.id === editName.id ? { ...st, name: editName.value } : st)
+      }));
+    } else {
+      setState(s => ({ ...s,
+        buildings: s.buildings.map(b => b.id === editName.id ? { ...b, label: editName.value } : b)
+      }));
+    }
+    setEditName(null);
+  }
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (!selectedId) return;
+        bumpHistory();
+        setState(s => selectedId.kind === 'street'
+          ? { ...s, streets: s.streets.filter(x => x.id !== selectedId.id) }
+          : { ...s, buildings: s.buildings.filter(x => x.id !== selectedId.id) }
+        );
+        setSelectedId(null);
+      }
+      if (e.key === 'Escape') {
+        setSelectedId(null);
+        setEditName(null);
+        setDrawPreview(null);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId, bumpHistory, setState, setSelectedId]);
+
+  const W = 1800, H = 1100;
+  const viewTransform = `translate(${view.x},${view.y}) scale(${view.scale})`;
+
+  // Cursor for draw tool
+  const cursor = tool === 'draw' ? 'crosshair'
+              : tool === 'pan' ? (isPanning ? 'grabbing' : 'grab')
+              : 'default';
+
+  return (
+    <div
+      ref={wrapRef}
+      className={`canvas-wrap ${eraserMode ? 'eraser-mode' : ''} ${isPanning ? 'dragging' : ''}`}
+      style={{ flex: 1, cursor }}
+      onDrop={onDrop}
+      onDragOver={onDragOver}
+      onContextMenu={onContextMenu}
+    >
+      <svg
+        ref={svgRef}
+        className="city-svg"
+        width="100%" height="100%"
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        onMouseDown={onMouseDown}
+        onMouseMove={(e) => { onMouseMove(e); onSvgMove(e); }}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onClick={handleBgClick}
+      >
+        <PaperDefs/>
+        <rect x="0" y="0" width={W} height={H} fill="url(#grass)"/>
+        <rect x="0" y="0" width={W} height={H} fill="url(#paper-grain)" opacity="0.6"/>
+
+        <g transform={viewTransform}>
+          {/* Road network — layered for clean crossings */}
+          <RoadNetwork
+            streets={state.streets}
+            intersections={intersections}
+            selectedId={selectedId}
+            onStreetClick={handleStreetClick}
+            onStreetDouble={handleStreetDouble}
+            onEndpointMouseDown={(streetId, end, e) => {
+              endpointDragRef.current = { streetId, end };
+              bumpHistory();
+            }}
+            hoverEndpoint={hoverEndpoint}
+          />
+          {/* intersection labels */}
+          {intersections.map((it, i) => (
+            <Intersection key={i} it={it} showAngles={showAngles}/>
+          ))}
+          {/* live angle indicator while dragging an endpoint */}
+          {angleHud && (
+            <g pointerEvents="none">
+              {/* arc from horizontal axis to current direction */}
+              {(() => {
+                const r = 36;
+                const dx = angleHud.tx - angleHud.x, dy = angleHud.ty - angleHud.y;
+                const len = Math.hypot(dx, dy);
+                if (len < 4) return null;
+                let deg = angleHud.deg;
+                // draw an arc from 0° (right) sweeping to deg
+                const rad = deg * Math.PI / 180;
+                const ax = angleHud.x + r, ay = angleHud.y;
+                const bx = angleHud.x + Math.cos(rad) * r;
+                const by = angleHud.y + Math.sin(rad) * r;
+                const large = deg > 180 ? 1 : 0;
+                const sweep = 1; // CCW in screen space (deg increases clockwise visually)
+                return (
+                  <g>
+                    {/* horizontal reference */}
+                    <line x1={angleHud.x} y1={angleHud.y} x2={angleHud.x + r + 14} y2={angleHud.y}
+                          stroke="#3b6fb5" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.6"/>
+                    {/* arc */}
+                    <path d={`M ${ax} ${ay} A ${r} ${r} 0 ${large} ${sweep} ${bx} ${by}`}
+                          fill="none" stroke={angleHud.snapped ? '#d97757' : '#3b6fb5'} strokeWidth="2.5"/>
+                    {/* tick at the dragged direction */}
+                    <line x1={angleHud.x} y1={angleHud.y} x2={bx} y2={by}
+                          stroke={angleHud.snapped ? '#d97757' : '#3b6fb5'} strokeWidth="1.5" opacity="0.5"/>
+                    {/* label */}
+                    <g transform={`translate(${angleHud.x + Math.cos(rad/2)*54}, ${angleHud.y + Math.sin(rad/2)*54})`}>
+                      <rect x="-26" y="-13" width="52" height="22" rx="4"
+                            fill="#fff" stroke={angleHud.snapped ? '#d97757' : '#3b6fb5'} strokeWidth="1.5"/>
+                      <text x="0" y="4" textAnchor="middle"
+                            style={{ fontFamily: 'Patrick Hand, cursive', fontSize: 16, fontWeight: 600 }}
+                            fill={angleHud.snapped ? '#d97757' : '#3b6fb5'}>
+                        {deg}°{angleHud.snapped ? ' ⊕' : ''}
+                      </text>
+                    </g>
+                  </g>
+                );
+              })()}
+            </g>
+          )}
+          {/* buildings */}
+          {state.buildings.map(b => {
+            const def = Buildings.getDef(b.kind);
+            return (
+              <Building
+                key={b.id} b={b} def={def}
+                selected={selectedId?.kind==='building' && selectedId.id === b.id}
+                onMouseDown={(e) => handleBuildingMouseDown(b, e)}
+                onClick={(e) => { e.stopPropagation(); }}
+                onDoubleClick={(e) => handleBuildingDouble(b, e)}
+              />
+            );
+          })}
+          {/* protractor overlay */}
+          <Protractor it={hoverIntersection}/>
+
+          {/* draw preview */}
+          {drawPreview && (() => {
+            const style = window.DRAW_STYLES?.find(d => d.id === drawStyle) || {};
+            const segs = style.expand ? style.expand(drawPreview) : [drawPreview];
+            const ang = Math.atan2(drawPreview.y2 - drawPreview.y1, drawPreview.x2 - drawPreview.x1) * 180 / Math.PI;
+            const len = Math.hypot(drawPreview.x2 - drawPreview.x1, drawPreview.y2 - drawPreview.y1);
+            return (
+              <g pointerEvents="none">
+                {segs.map((s, i) => (
+                  <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                    stroke="#3b6fb5" strokeWidth="30" strokeLinecap="round"
+                    opacity="0.35"/>
+                ))}
+                {segs.map((s, i) => (
+                  <line key={'d'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                    stroke="#3b6fb5" strokeWidth="2" strokeLinecap="round"
+                    strokeDasharray="6 4" opacity="0.9"/>
+                ))}
+                <text x={(drawPreview.x1+drawPreview.x2)/2} y={(drawPreview.y1+drawPreview.y2)/2 - 28}
+                  textAnchor="middle" className="angle-label" fill="#3b6fb5">
+                  {Math.round(len)}px · {Math.round(((ang%180)+180)%180)}°
+                </text>
+              </g>
+            );
+          })()}
+        </g>
+      </svg>
+
+      {editName && (
+        <div className="name-edit" style={{ left: editName.x + 8, top: editName.y + 8 }}>
+          <input
+            autoFocus
+            value={editName.value}
+            onChange={(e) => setEditName({ ...editName, value: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitName();
+              if (e.key === 'Escape') setEditName(null);
+            }}
+            onBlur={commitName}
+            placeholder={editName.kind === 'street' ? 'Street name...' : 'Building name...'}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ----- DRAW STYLES (shared with App.jsx) -----
+// Each style takes a {x1,y1,x2,y2} stroke and returns one or more street segments
+window.DRAW_STYLES = [
+  {
+    id: 'single',
+    label: 'Single road',
+    icon: '╱',
+    hint: 'Click + drag',
+    expand: (s) => [s],
+  },
+  {
+    id: 'parallel',
+    label: 'Parallel pair',
+    icon: '∥',
+    hint: 'Two parallel roads, 80px apart',
+    expand: (s) => {
+      const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len; // perpendicular
+      const off = 90;
+      return [
+        { x1: s.x1 + nx*off/2, y1: s.y1 + ny*off/2, x2: s.x2 + nx*off/2, y2: s.y2 + ny*off/2 },
+        { x1: s.x1 - nx*off/2, y1: s.y1 - ny*off/2, x2: s.x2 - nx*off/2, y2: s.y2 - ny*off/2 },
+      ];
+    },
+  },
+  {
+    id: 'perpendicular',
+    label: 'Perpendicular cross',
+    icon: '✚',
+    hint: 'Adds a 90° crossing road',
+    expand: (s) => {
+      const mx = (s.x1+s.x2)/2, my = (s.y1+s.y2)/2;
+      const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const half = len / 2;
+      return [
+        s,
+        { x1: mx - nx*half, y1: my - ny*half, x2: mx + nx*half, y2: my + ny*half },
+      ];
+    },
+  },
+  {
+    id: 'transversal',
+    label: 'Diagonal',
+    icon: '╲',
+    hint: 'Free-angle road (good for transversals)',
+    expand: (s) => [s],
+  },
+];
