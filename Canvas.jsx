@@ -276,7 +276,41 @@ function projectClosest(streets, x, y) {
 const LIGHT_CYCLE_MS = 6500;
 function currentLightPhase(now) { return Math.floor(now / LIGHT_CYCLE_MS) % 2; }
 
-function stepVehicles(motion, vehicles, streets, busStops, lightInfo, dt, now) {
+// Distance from pt to the closest road centerline (for pedestrian off-road check)
+function distanceToRoad(streets, x, y) {
+  const near = projectClosest(streets, x, y);
+  return near ? near.dist : Infinity;
+}
+
+// Snapshot of every road occupant for car-following / collision avoidance.
+function buildOccupancy(motion, fireTrucks, policeCars) {
+  const out = [];
+  motion.forEach((m, id) => out.push({ id, streetId: m.streetId, t: m.t, dir: m.dir }));
+  for (const t of fireTrucks)  out.push({ id: t.id, streetId: t.streetId, t: t.t, dir: t.dir });
+  for (const t of policeCars)  out.push({ id: t.id, streetId: t.streetId, t: t.t, dir: t.dir });
+  return out;
+}
+
+// Returns the closest other occupant ahead of (selfId, m) on the same street
+// going the same direction, in pixels. Infinity if nobody's there.
+function closestAhead(occupancy, selfId, m, len) {
+  let best = Infinity;
+  for (const o of occupancy) {
+    if (o.id === selfId) continue;
+    if (o.streetId !== m.streetId) continue;
+    if (o.dir !== m.dir) continue;
+    const ahead = m.dir > 0 ? o.t > m.t : o.t < m.t;
+    if (!ahead) continue;
+    const d = Math.abs(o.t - m.t) * len;
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+const FOLLOW_STOP = 22;  // hold position when this close
+const FOLLOW_SLOW = 60;  // start slowing within this
+
+function stepVehicles(motion, vehicles, streets, busStops, lightInfo, occupancy, dt, now) {
   // prune motion entries for vehicles that no longer exist
   const valid = new Set(vehicles.map(v => v.id));
   for (const id of Array.from(motion.keys())) {
@@ -350,7 +384,21 @@ function stepVehicles(motion, vehicles, streets, busStops, lightInfo, dt, now) {
       }
     }
 
-    m.t += m.dir * (m.speed * dt) / len;
+    // Car-following: brake/stop if another vehicle occupies the road ahead.
+    let speedScale = 1;
+    if (occupancy) {
+      const ahead = closestAhead(occupancy, v.id, m, len);
+      if (ahead < FOLLOW_STOP) {
+        m.pauseUntil = now + 180;
+        continue;
+      }
+      if (ahead < FOLLOW_SLOW) {
+        speedScale = (ahead - FOLLOW_STOP) / (FOLLOW_SLOW - FOLLOW_STOP);
+        if (speedScale < 0.15) speedScale = 0.15;
+      }
+    }
+
+    m.t += m.dir * (m.speed * speedScale * dt) / len;
 
     if (m.t > 1 || m.t < 0) {
       const reachedEnd = m.t > 1 ? 2 : 1;
@@ -379,32 +427,44 @@ function stepVehicles(motion, vehicles, streets, busStops, lightInfo, dt, now) {
 const SKIN_COLORS = ['#f4d4b6','#e3b896','#c9956b','#9a6e4a','#7a4f30','#dab28e'];
 const SHIRT_COLORS = ['#3b6fb5','#d94c3a','#4f8b4a','#e7b94a','#8a5fb0','#de8348','#d97ba0','#5a8aa0'];
 
-function pickWaypoint(anchors) {
-  const a = anchors[Math.floor(Math.random() * anchors.length)];
-  if (!a) return null;
+// Pick a destination near (cx, cy). Prefers anchors within `maxDist` so peds
+// don't trek across the entire map; falls back to any anchor only if nothing
+// is in range.
+function pickWaypoint(anchors, cx, cy, maxDist = 240) {
+  if (!anchors.length) return null;
+  const nearby = [];
+  for (const a of anchors) {
+    if (Math.hypot(a.x - cx, a.y - cy) < maxDist) nearby.push(a);
+  }
+  const pool = nearby.length ? nearby : anchors;
+  const a = pool[Math.floor(Math.random() * pool.length)];
   return {
-    x: a.x + (Math.random() - 0.5) * 70,
-    y: a.y + (Math.random() - 0.5) * 70,
+    x: a.x + (Math.random() - 0.5) * 50,
+    y: a.y + (Math.random() - 0.5) * 50,
   };
 }
 
-function stepPedestrians(peds, anchors, dt, now) {
+const PED_ROAD_THRESHOLD = 14; // pixels — within this counts as "on the road"
+
+function stepPedestrians(peds, anchors, streets, dt, now) {
   if (anchors.length < 2) { peds.length = 0; return; }
-  const TARGET = Math.min(14, Math.max(4, Math.floor(anchors.length * 0.7)));
+  const TARGET = Math.min(10, Math.max(3, Math.floor(anchors.length * 0.55)));
   while (peds.length < TARGET) {
-    const start = pickWaypoint(anchors);
-    const end = pickWaypoint(anchors);
-    if (!start || !end) break;
+    const start = pickWaypoint(anchors, 900, 550);
+    if (!start) break;
+    const end = pickWaypoint(anchors, start.x, start.y);
     peds.push({
       id: `p-${now.toFixed(0)}-${peds.length}-${Math.random().toString(36).slice(2,5)}`,
       x: start.x, y: start.y,
-      tx: end.x, ty: end.y,
+      tx: end ? end.x : start.x,
+      ty: end ? end.y : start.y,
       speed: 18 + Math.random() * 18,
       skin: SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)],
       shirt: SHIRT_COLORS[Math.floor(Math.random() * SHIRT_COLORS.length)],
       stride: 0,
       strideAt: now,
       pauseUntil: 0,
+      crossing: false,
     });
   }
   if (peds.length > TARGET) peds.length = TARGET;
@@ -418,14 +478,30 @@ function stepPedestrians(peds, anchors, dt, now) {
     const dx = p.tx - p.x, dy = p.ty - p.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 4) {
-      const next = pickWaypoint(anchors);
+      const next = pickWaypoint(anchors, p.x, p.y);
       if (next) { p.tx = next.x; p.ty = next.y; }
       continue;
     }
-    const step = Math.min(p.speed * dt, dist);
-    p.x += (dx / dist) * step;
-    p.y += (dy / dist) * step;
-    if (now - p.strideAt > 320) {
+    const baseStep = Math.min(p.speed * dt, dist);
+    const ux = dx / dist, uy = dy / dist;
+    const nx = p.x + ux * baseStep;
+    const ny = p.y + uy * baseStep;
+
+    // Road avoidance: pause to "look both ways" before stepping onto a road,
+    // then sprint across. Once clear of the road, reset the crossing flag.
+    const onRoadNow = distanceToRoad(streets, p.x, p.y) < PED_ROAD_THRESHOLD;
+    const onRoadNext = distanceToRoad(streets, nx, ny) < PED_ROAD_THRESHOLD;
+    if (!onRoadNow && onRoadNext && !p.crossing) {
+      p.pauseUntil = now + 900 + Math.random() * 900;
+      p.crossing = true;
+      continue;
+    }
+    if (onRoadNow && !onRoadNext) p.crossing = false;
+
+    const sprintMul = p.crossing ? 1.7 : 1;
+    p.x = p.x + ux * baseStep * sprintMul;
+    p.y = p.y + uy * baseStep * sprintMul;
+    if (now - p.strideAt > (p.crossing ? 200 : 320)) {
       p.stride = p.stride ? 0 : 1;
       p.strideAt = now;
     }
@@ -458,7 +534,7 @@ const POLICE_CFG = {
   cooldownMin: 22, cooldownMax: 50,
 };
 
-function stepDispatchedFleet(items, cooldownRef, stations, streets, dt, now, cfg) {
+function stepDispatchedFleet(items, cooldownRef, stations, streets, occupancy, dt, now, cfg) {
   cooldownRef.current -= dt;
 
   if (cooldownRef.current <= 0 && stations.length > 0 && streets.length > 0 && items.length < cfg.cap) {
@@ -490,7 +566,19 @@ function stepDispatchedFleet(items, cooldownRef, stations, streets, dt, now, cfg
     if (!s) { items.splice(i, 1); continue; }
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len === 0) continue;
-    it.t += it.dir * (it.speed * dt) / len;
+
+    // Don't ram civilians — slow / stop when something's on the road ahead.
+    let speedScale = 1;
+    if (occupancy) {
+      const ahead = closestAhead(occupancy, it.id, it, len);
+      if (ahead < FOLLOW_STOP) continue;
+      if (ahead < FOLLOW_SLOW) {
+        speedScale = (ahead - FOLLOW_STOP) / (FOLLOW_SLOW - FOLLOW_STOP);
+        if (speedScale < 0.2) speedScale = 0.2;
+      }
+    }
+
+    it.t += it.dir * (it.speed * speedScale * dt) / len;
 
     if (it.t > 1 || it.t < 0) {
       const reachedEnd = it.t > 1 ? 2 : 1;
@@ -611,10 +699,13 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
       const p = propsRef.current;
       const phase = currentLightPhase(now);
       const lInfo = p.lightInfo ? { ...p.lightInfo, phase } : null;
-      stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, lInfo, dt, now);
-      stepPedestrians(pedRef.current, p.peopleSeeds, dt, now);
-      stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, dt, now, FIRE_CFG);
-      stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, dt, now, POLICE_CFG);
+      // Snapshot road occupants BEFORE stepping so collision checks see a
+      // consistent view this frame (same-side-same-direction following).
+      const occ = buildOccupancy(motionRef.current, fireTrucksRef.current, policeCarsRef.current);
+      stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, lInfo, occ, dt, now);
+      stepPedestrians(pedRef.current, p.peopleSeeds, p.streets, dt, now);
+      stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, dt, now, FIRE_CFG);
+      stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, dt, now, POLICE_CFG);
       setTick(t => (t + 1) & 0xFFFF);
       raf = requestAnimationFrame(loop);
     };
