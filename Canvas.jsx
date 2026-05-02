@@ -271,6 +271,68 @@ function projectClosest(streets, x, y) {
   return best;
 }
 
+// ============ SOUND ============
+// Web Audio synthesis — no external files. Lazy AudioContext (browsers
+// require it created/resumed in response to a user gesture).
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return null;
+    _audioCtx = new Ctor();
+  }
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+function playFireSiren() {
+  const ctx = getAudioCtx(); if (!ctx) return;
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(620, t0);
+  osc.frequency.linearRampToValueAtTime(940, t0 + 0.45);
+  osc.frequency.linearRampToValueAtTime(620, t0 + 0.9);
+  osc.frequency.linearRampToValueAtTime(940, t0 + 1.35);
+  osc.frequency.linearRampToValueAtTime(620, t0 + 1.8);
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(0.07, t0 + 0.05);
+  gain.gain.setValueAtTime(0.07, t0 + 1.7);
+  gain.gain.linearRampToValueAtTime(0, t0 + 1.9);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + 2);
+}
+function playPoliceSiren() {
+  const ctx = getAudioCtx(); if (!ctx) return;
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  for (let i = 0; i < 6; i++) {
+    osc.frequency.setValueAtTime(720, t0 + i * 0.3);
+    osc.frequency.setValueAtTime(940, t0 + i * 0.3 + 0.15);
+  }
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(0.06, t0 + 0.05);
+  gain.gain.setValueAtTime(0.06, t0 + 1.7);
+  gain.gain.linearRampToValueAtTime(0, t0 + 1.85);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + 1.9);
+}
+function playBusDing() {
+  const ctx = getAudioCtx(); if (!ctx) return;
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(880, t0);
+  osc.frequency.linearRampToValueAtTime(1320, t0 + 0.06);
+  gain.gain.setValueAtTime(0.05, t0);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.35);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + 0.4);
+}
+
 // Light cycle: each right-angle intersection alternates which street is green.
 // Phase 0 = streetA green / streetB red. Phase 1 = streetA red / streetB green.
 const LIGHT_CYCLE_MS = 6500;
@@ -282,18 +344,26 @@ function distanceToRoad(streets, x, y) {
   return near ? near.dist : Infinity;
 }
 
+// Half-length (along travel) of each rendered vehicle, used to compute
+// edge-to-edge gap so a car doesn't park on top of a longer bus's rear.
+const HALF_LEN = { car: 11, bus: 21, firetruck: 13, policecar: 12 };
+function halfLenForKind(kind) { return HALF_LEN[kind] || 11; }
+
 // Snapshot of every road occupant for car-following / collision avoidance.
-function buildOccupancy(motion, fireTrucks, policeCars) {
+function buildOccupancy(motion, vehicles, fireTrucks, policeCars) {
   const out = [];
-  motion.forEach((m, id) => out.push({ id, streetId: m.streetId, t: m.t, dir: m.dir }));
-  for (const t of fireTrucks)  out.push({ id: t.id, streetId: t.streetId, t: t.t, dir: t.dir });
-  for (const t of policeCars)  out.push({ id: t.id, streetId: t.streetId, t: t.t, dir: t.dir });
+  const kindById = new Map(vehicles.map(v => [v.id, v.kind]));
+  motion.forEach((m, id) => {
+    out.push({ id, streetId: m.streetId, t: m.t, dir: m.dir, halfLen: halfLenForKind(kindById.get(id)) });
+  });
+  for (const t of fireTrucks)  out.push({ id: t.id, streetId: t.streetId, t: t.t, dir: t.dir, halfLen: HALF_LEN.firetruck });
+  for (const t of policeCars)  out.push({ id: t.id, streetId: t.streetId, t: t.t, dir: t.dir, halfLen: HALF_LEN.policecar });
   return out;
 }
 
-// Returns the closest other occupant ahead of (selfId, m) on the same street
-// going the same direction, in pixels. Infinity if nobody's there.
-function closestAhead(occupancy, selfId, m, len) {
+// Returns the closest edge-to-edge gap to any occupant ahead of (selfId, m)
+// on the same street going the same direction, in pixels. Infinity if clear.
+function closestAheadGap(occupancy, selfId, m, len, selfHalfLen) {
   let best = Infinity;
   for (const o of occupancy) {
     if (o.id === selfId) continue;
@@ -301,16 +371,17 @@ function closestAhead(occupancy, selfId, m, len) {
     if (o.dir !== m.dir) continue;
     const ahead = m.dir > 0 ? o.t > m.t : o.t < m.t;
     if (!ahead) continue;
-    const d = Math.abs(o.t - m.t) * len;
-    if (d < best) best = d;
+    const centerDist = Math.abs(o.t - m.t) * len;
+    const gap = centerDist - o.halfLen - selfHalfLen;
+    if (gap < best) best = gap;
   }
   return best;
 }
 
-const FOLLOW_STOP = 22;  // hold position when this close
-const FOLLOW_SLOW = 60;  // start slowing within this
+const FOLLOW_STOP_GAP = 5;   // hold position when bumper gap < this
+const FOLLOW_SLOW_GAP = 38;  // start slowing within this gap
 
-function stepVehicles(motion, vehicles, streets, busStops, lightInfo, occupancy, dt, now) {
+function stepVehicles(motion, vehicles, streets, busStops, lightInfo, occupancy, sound, dt, now) {
   // prune motion entries for vehicles that no longer exist
   const valid = new Set(vehicles.map(v => v.id));
   for (const id of Array.from(motion.keys())) {
@@ -350,6 +421,7 @@ function stepVehicles(motion, vehicles, streets, busStops, lightInfo, occupancy,
             m.pauseUntil = now + 1500 + Math.random() * 1500;
             m.lastStopId = bs.id;
             m.lastStopAt = now;
+            if (sound) sound('bus');
             break;
           }
         }
@@ -387,13 +459,14 @@ function stepVehicles(motion, vehicles, streets, busStops, lightInfo, occupancy,
     // Car-following: brake/stop if another vehicle occupies the road ahead.
     let speedScale = 1;
     if (occupancy) {
-      const ahead = closestAhead(occupancy, v.id, m, len);
-      if (ahead < FOLLOW_STOP) {
+      const selfHalf = halfLenForKind(v.kind);
+      const gap = closestAheadGap(occupancy, v.id, m, len, selfHalf);
+      if (gap < FOLLOW_STOP_GAP) {
         m.pauseUntil = now + 180;
         continue;
       }
-      if (ahead < FOLLOW_SLOW) {
-        speedScale = (ahead - FOLLOW_STOP) / (FOLLOW_SLOW - FOLLOW_STOP);
+      if (gap < FOLLOW_SLOW_GAP) {
+        speedScale = (gap - FOLLOW_STOP_GAP) / (FOLLOW_SLOW_GAP - FOLLOW_STOP_GAP);
         if (speedScale < 0.15) speedScale = 0.15;
       }
     }
@@ -534,7 +607,7 @@ const POLICE_CFG = {
   cooldownMin: 22, cooldownMax: 50,
 };
 
-function stepDispatchedFleet(items, cooldownRef, stations, streets, occupancy, dt, now, cfg) {
+function stepDispatchedFleet(items, cooldownRef, stations, streets, occupancy, sound, dt, now, cfg) {
   cooldownRef.current -= dt;
 
   if (cooldownRef.current <= 0 && stations.length > 0 && streets.length > 0 && items.length < cfg.cap) {
@@ -553,6 +626,7 @@ function stepDispatchedFleet(items, cooldownRef, stations, streets, occupancy, d
         rot: 0, flipX: false,
         blink: true, blinkAt: now,
       });
+      if (sound) sound(cfg.kind === 'firetruck' ? 'fire' : 'police');
     }
     cooldownRef.current = cfg.cooldownMin + Math.random() * (cfg.cooldownMax - cfg.cooldownMin);
   }
@@ -570,10 +644,11 @@ function stepDispatchedFleet(items, cooldownRef, stations, streets, occupancy, d
     // Don't ram civilians — slow / stop when something's on the road ahead.
     let speedScale = 1;
     if (occupancy) {
-      const ahead = closestAhead(occupancy, it.id, it, len);
-      if (ahead < FOLLOW_STOP) continue;
-      if (ahead < FOLLOW_SLOW) {
-        speedScale = (ahead - FOLLOW_STOP) / (FOLLOW_SLOW - FOLLOW_STOP);
+      const selfHalf = halfLenForKind(it.kind);
+      const gap = closestAheadGap(occupancy, it.id, it, len, selfHalf);
+      if (gap < FOLLOW_STOP_GAP) continue;
+      if (gap < FOLLOW_SLOW_GAP) {
+        speedScale = (gap - FOLLOW_STOP_GAP) / (FOLLOW_SLOW_GAP - FOLLOW_STOP_GAP);
         if (speedScale < 0.2) speedScale = 0.2;
       }
     }
@@ -678,7 +753,7 @@ function TrafficLight({ x, y, phase }) {
   );
 }
 
-function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, trafficLights }) {
+function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, trafficLights, soundOn }) {
   const motionRef = useRef(new Map());
   const pedRef = useRef([]);
   const fireTrucksRef = useRef([]);
@@ -687,7 +762,7 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
   const policeCooldownRef = useRef(15); // first police patrol after 15s
   // Keep latest props accessible from the RAF loop without re-subscribing.
   const propsRef = useRef({});
-  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo };
+  propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, soundOn };
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -701,11 +776,16 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
       const lInfo = p.lightInfo ? { ...p.lightInfo, phase } : null;
       // Snapshot road occupants BEFORE stepping so collision checks see a
       // consistent view this frame (same-side-same-direction following).
-      const occ = buildOccupancy(motionRef.current, fireTrucksRef.current, policeCarsRef.current);
-      stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, lInfo, occ, dt, now);
+      const occ = buildOccupancy(motionRef.current, p.vehicles, fireTrucksRef.current, policeCarsRef.current);
+      const sound = p.soundOn ? (kind => {
+        if (kind === 'fire') playFireSiren();
+        else if (kind === 'police') playPoliceSiren();
+        else if (kind === 'bus') playBusDing();
+      }) : null;
+      stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, lInfo, occ, sound, dt, now);
       stepPedestrians(pedRef.current, p.peopleSeeds, p.streets, dt, now);
-      stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, dt, now, FIRE_CFG);
-      stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, dt, now, POLICE_CFG);
+      stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, sound, dt, now, FIRE_CFG);
+      stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, sound, dt, now, POLICE_CFG);
       setTick(t => (t + 1) & 0xFFFF);
       raf = requestAnimationFrame(loop);
     };
@@ -781,6 +861,7 @@ window.CityCanvas = function CityCanvas({
   drawStyle, // string id from DRAW_STYLES
   zoomTick, fitTick, // counters: when these change, run zoom in/out / fit
   liveMode, // when true, cars/buses animate along the road network
+  soundOn,  // when true, dispatch sirens + bus stop ding play
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -1257,6 +1338,7 @@ window.CityCanvas = function CityCanvas({
               policeStations={state.buildings.filter(b => b.kind === 'police')}
               lightInfo={{ byStreet: lightData.byStreet }}
               trafficLights={lightData.lights}
+              soundOn={soundOn}
             />
           )}
           {/* protractor overlay */}

@@ -62,9 +62,10 @@ function App() {
   const [state, setState] = useStateA(loadInitialState);
   const [tool, setTool] = useStateA('select'); // select | pan | eraser | draw
   const [drawStyle, setDrawStyle] = useStateA('single');
-  const [showAngles, setShowAngles] = useStateA(true);
+  const [showAngles, setShowAngles] = useStateA(false);
   const [showProtractor, setShowProtractor] = useStateA(true);
   const [liveMode, setLiveMode] = useStateA(true);
+  const [soundOn, setSoundOn] = useStateA(false);
   const [selectedId, setSelectedId] = useStateA(null);
   const [toast, setToast] = useStateA(null);
   const [confirmDialog, setConfirmDialog] = useStateA(null); // { title, message, confirmLabel, danger, onConfirm }
@@ -408,6 +409,7 @@ function App() {
           zoomTick={zoomTick}
           fitTick={fitTick}
           liveMode={liveMode}
+          soundOn={soundOn}
         />
 
         {/* Title bar overlay */}
@@ -457,6 +459,10 @@ function App() {
           <button className={`tool-btn ${liveMode ? 'active' : ''}`}
                   onClick={() => setLiveMode(!liveMode)} title="Bring city to life — cars and buses move around">
             🚦
+          </button>
+          <button className={`tool-btn ${soundOn ? 'active' : ''}`}
+                  onClick={() => setSoundOn(!soundOn)} title="Sound effects — sirens on dispatch, ding at bus stops">
+            {soundOn ? '🔊' : '🔇'}
           </button>
         </div>
 
