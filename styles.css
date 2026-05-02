@@ -306,6 +306,24 @@ button { font-family: var(--hand); cursor: pointer; }
   user-select: none;
 }
 .stats-chip span { font-feature-settings: "tnum"; }
+.stats-chip .stat-control {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.stats-chip .stat-btn {
+  width: 18px; height: 18px;
+  border: 1.5px solid rgba(42,36,24,0.4);
+  border-radius: 4px;
+  background: var(--paper);
+  font-family: var(--hand);
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  color: var(--ink);
+}
+.stats-chip .stat-btn:hover { background: var(--crayon-yellow); }
+.stats-chip .stat-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Shortcut list inside the help modal */
 .shortcut-list {

@@ -159,6 +159,7 @@ function App() {
   const [projectsOpen, setProjectsOpen] = useStateA(false);
   const [dispatches, setDispatches] = useStateA([]);
   const [armedKind, setArmedKind] = useStateA(null); // touch-friendly tap-to-place
+  const [pedTarget, setPedTarget] = useStateA(savedPref('pedTarget', 8));
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
@@ -171,10 +172,10 @@ function App() {
   useEffectA(() => {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        tool, drawStyle, showAngles, liveMode, soundOn, weather,
+        tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget,
       }));
     } catch (e) {}
-  }, [tool, drawStyle, showAngles, liveMode, soundOn, weather]);
+  }, [tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget]);
 
   // Toast helper
   function showToast(msg, ms = 2200) {
@@ -566,6 +567,49 @@ function App() {
     setDispatches(prev => prev.filter(d => d.id !== id));
   }
 
+  // Quick-add a car on a random street (for the live +/− stats control).
+  function addVehicleOnRoad(kind = 'car') {
+    if (!state.streets.length) { showToast('Add some roads first'); return; }
+    const street = state.streets[Math.floor(Math.random() * state.streets.length)];
+    const t = 0.2 + Math.random() * 0.6;
+    const dx = street.x2 - street.x1, dy = street.y2 - street.y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const offset = kind === 'bus' ? 11 : 9;
+    let rot = Math.atan2(uy, ux) * 180 / Math.PI;
+    if (rot > 90) rot -= 180; else if (rot < -90) rot += 180;
+    bumpHistory();
+    setState(s => ({
+      ...s,
+      buildings: [...s.buildings, {
+        id: nextId('b'),
+        kind,
+        x: street.x1 + t * dx + (-uy) * offset,
+        y: street.y1 + t * dy + ux * offset,
+        rot,
+        variant: Math.floor(Math.random() * 9),
+        label: '',
+      }],
+    }));
+  }
+  // Remove the most recently placed car/bus (live −).
+  function removeVehicleFromRoad() {
+    const idx = (() => {
+      for (let i = state.buildings.length - 1; i >= 0; i--) {
+        const k = state.buildings[i].kind;
+        if (k === 'car' || k === 'bus') return i;
+      }
+      return -1;
+    })();
+    if (idx < 0) return;
+    bumpHistory();
+    const target = state.buildings[idx];
+    setState(s => ({
+      ...s,
+      buildings: s.buildings.filter(b => b.id !== target.id),
+    }));
+  }
+
   function exportJSON() {
     const data = {
       version: 1,
@@ -718,6 +762,7 @@ function App() {
           onDispatchDone={clearDispatch}
           armedKind={armedKind}
           onArmedConsumed={() => setArmedKind(null)}
+          pedTarget={pedTarget}
         />
 
         {/* Title bar overlay */}
@@ -814,11 +859,26 @@ function App() {
         </div>
 
         {/* City stats chip */}
-        <div className="stats-chip" data-no-pan>
-          <span title={`${state.streets.length} road segments`}>🛣 {state.streets.length}</span>
-          <span title={`${state.buildings.length} buildings & decor`}>🏠 {state.buildings.length}</span>
-          <span title={`${intersections.length} intersections`}>⊥ {intersections.length}</span>
-        </div>
+        {(() => {
+          const vehicleCount = state.buildings.filter(b => b.kind === 'car' || b.kind === 'bus').length;
+          return (
+            <div className="stats-chip" data-no-pan>
+              <span title={`${state.streets.length} road segments`}>🛣 {state.streets.length}</span>
+              <span title={`${state.buildings.length} buildings & decor`}>🏠 {state.buildings.length}</span>
+              <span title={`${intersections.length} intersections`}>⊥ {intersections.length}</span>
+              <span className="stat-control" title="Pedestrians">
+                <button className="stat-btn" onClick={() => setPedTarget(p => Math.max(0, (p ?? 8) - 2))} disabled={(pedTarget ?? 8) <= 0}>−</button>
+                🚶 {pedTarget ?? 8}
+                <button className="stat-btn" onClick={() => setPedTarget(p => Math.min(40, (p ?? 8) + 2))} disabled={(pedTarget ?? 8) >= 40}>+</button>
+              </span>
+              <span className="stat-control" title="Cars + buses on the road">
+                <button className="stat-btn" onClick={removeVehicleFromRoad} disabled={vehicleCount === 0}>−</button>
+                🚗 {vehicleCount}
+                <button className="stat-btn" onClick={() => addVehicleOnRoad(Math.random() < 0.85 ? 'car' : 'bus')} disabled={!state.streets.length}>+</button>
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Zoom controls */}
         <div className="zoom-bar" data-no-pan>
