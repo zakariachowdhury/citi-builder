@@ -603,33 +603,155 @@ const SHIRT_COLORS = ['#3b6fb5','#d94c3a','#4f8b4a','#e7b94a','#8a5fb0','#de8348
 // peds clearly OFF the asphalt and onto the curb.
 const SIDEWALK_OFFSET = 23;
 
-function stepPedestrians(peds, streets, lightInfo, dt, now) {
+// True if any point along the segment (a)-(b) sits within `clearance` px of
+// any road centerline. Used to confine "visiting" peds to one block.
+function lineCrossesAnyRoad(ax, ay, bx, by, streets, clearance = 18) {
+  const steps = 8;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const x = ax + t * (bx - ax);
+    const y = ay + t * (by - ay);
+    for (const seg of streets) {
+      const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1;
+      const len2 = dx * dx + dy * dy;
+      if (len2 === 0) continue;
+      let tt = ((x - seg.x1) * dx + (y - seg.y1) * dy) / len2;
+      if (tt < 0) tt = 0; else if (tt > 1) tt = 1;
+      const px = seg.x1 + tt * dx, py = seg.y1 + tt * dy;
+      if (Math.hypot(x - px, y - py) < clearance) return true;
+    }
+  }
+  return false;
+}
+
+// Building kinds that pedestrians might pop into. Excludes tiny decor and
+// anything that moves on its own.
+function isVisitableBuilding(b) {
+  return b.kind !== 'tree' && b.kind !== 'flower' && b.kind !== 'bench'
+      && b.kind !== 'mailbox' && b.kind !== 'streetlight'
+      && b.kind !== 'busStop' && b.kind !== 'fountain'
+      && b.kind !== 'car' && b.kind !== 'bus';
+}
+
+// Try to pick two visit-eligible buildings within 60-220 px of each other
+// where a straight line between them doesn't cross a road. Falls back to
+// null after `tries` attempts so the caller can spawn a sidewalk ped instead.
+function findVisitPair(buildings, streets, anchorX, anchorY, tries = 6) {
+  const visitables = buildings.filter(isVisitableBuilding);
+  if (visitables.length < 2) return null;
+  for (let n = 0; n < tries; n++) {
+    let a;
+    if (anchorX != null) {
+      // Bias the first pick toward `anchor` so peds stay local.
+      const nearby = visitables.filter(b => Math.hypot(b.x - anchorX, b.y - anchorY) < 260);
+      a = (nearby.length ? nearby : visitables)[Math.floor(Math.random() * (nearby.length || visitables.length))];
+    } else {
+      a = visitables[Math.floor(Math.random() * visitables.length)];
+    }
+    const cand = visitables.filter(b => {
+      if (b === a) return false;
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      return d > 50 && d < 220;
+    });
+    if (!cand.length) continue;
+    const b = cand[Math.floor(Math.random() * cand.length)];
+    if (!lineCrossesAnyRoad(a.x, a.y, b.x, b.y, streets)) return { a, b };
+  }
+  return null;
+}
+
+function stepPedestrians(peds, streets, lightInfo, buildings, dt, now) {
   if (!streets.length) { peds.length = 0; return; }
   const TARGET = Math.min(14, Math.max(4, streets.length));
 
-  // Spawn — assigned to a random street segment + random sidewalk side.
+  // Spawn mix: when buildings are available, ~45% of peds visit between
+  // nearby places in the same block. Rest stay on sidewalks.
   while (peds.length < TARGET) {
-    const street = streets[Math.floor(Math.random() * streets.length)];
-    peds.push({
-      id: `p-${now.toFixed(0)}-${peds.length}-${Math.random().toString(36).slice(2,5)}`,
-      streetId: street.id,
-      t: Math.random(),
-      dir: Math.random() < 0.5 ? 1 : -1,
-      side: Math.random() < 0.5 ? 1 : -1,
-      speed: 16 + Math.random() * 12,
-      skin: SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)],
-      shirt: SHIRT_COLORS[Math.floor(Math.random() * SHIRT_COLORS.length)],
-      stride: 0,
-      strideAt: now,
-      pauseUntil: 0,
-      // For an animated cross between sidewalks
-      crossFrom: 0, crossTo: 0, crossT: 0,
-      x: 0, y: 0,
-    });
+    const wantVisit = buildings && buildings.length >= 2 && Math.random() < 0.45;
+    let p = null;
+    if (wantVisit) {
+      const pair = findVisitPair(buildings, streets);
+      if (pair) {
+        const jx = () => (Math.random() - 0.5) * 26;
+        p = {
+          id: `p-${now.toFixed(0)}-${peds.length}-${Math.random().toString(36).slice(2,5)}`,
+          mode: 'visiting',
+          fromX: pair.a.x + jx(), fromY: pair.a.y + jx(),
+          toX:   pair.b.x + jx(), toY:   pair.b.y + jx(),
+          x: pair.a.x, y: pair.a.y,
+          goingTo: 'to',
+          tripsLeft: 4 + Math.floor(Math.random() * 4),
+          speed: 16 + Math.random() * 12,
+          skin: SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)],
+          shirt: SHIRT_COLORS[Math.floor(Math.random() * SHIRT_COLORS.length)],
+          stride: 0, strideAt: now, pauseUntil: 0,
+        };
+      }
+    }
+    if (!p) {
+      const street = streets[Math.floor(Math.random() * streets.length)];
+      p = {
+        id: `p-${now.toFixed(0)}-${peds.length}-${Math.random().toString(36).slice(2,5)}`,
+        mode: 'sidewalk',
+        streetId: street.id,
+        t: Math.random(),
+        dir: Math.random() < 0.5 ? 1 : -1,
+        side: Math.random() < 0.5 ? 1 : -1,
+        speed: 16 + Math.random() * 12,
+        skin: SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)],
+        shirt: SHIRT_COLORS[Math.floor(Math.random() * SHIRT_COLORS.length)],
+        stride: 0, strideAt: now, pauseUntil: 0,
+        crossFrom: 0, crossTo: 0, crossT: 0,
+        x: 0, y: 0,
+      };
+    }
+    peds.push(p);
   }
   if (peds.length > TARGET) peds.length = TARGET;
 
   for (const p of peds) {
+    // ---- Visiting peds: walk between two nearby buildings ----
+    if (p.mode === 'visiting') {
+      if (p.pauseUntil <= now) {
+        const tgtX = p.goingTo === 'to' ? p.toX : p.fromX;
+        const tgtY = p.goingTo === 'to' ? p.toY : p.fromY;
+        const dx = tgtX - p.x, dy = tgtY - p.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 4) {
+          // Arrived — pause and swap target.
+          p.pauseUntil = now + 1200 + Math.random() * 2200;
+          p.goingTo = p.goingTo === 'to' ? 'from' : 'to';
+          p.tripsLeft--;
+          if (p.tripsLeft <= 0 && buildings && buildings.length >= 2) {
+            const pair = findVisitPair(buildings, streets, p.x, p.y);
+            if (pair) {
+              const jx = () => (Math.random() - 0.5) * 26;
+              p.fromX = pair.a.x + jx(); p.fromY = pair.a.y + jx();
+              p.toX   = pair.b.x + jx(); p.toY   = pair.b.y + jx();
+              p.tripsLeft = 4 + Math.floor(Math.random() * 4);
+              p.goingTo = 'to';
+            } else {
+              p.tripsLeft = 4;
+            }
+          }
+        } else {
+          if (Math.random() < 0.025 * dt) {
+            p.pauseUntil = now + 600 + Math.random() * 1400;
+          } else {
+            const step = Math.min(p.speed * dt, dist);
+            p.x += (dx / dist) * step;
+            p.y += (dy / dist) * step;
+          }
+        }
+      }
+      if (p.pauseUntil <= now && now - p.strideAt > 320) {
+        p.stride = p.stride ? 0 : 1;
+        p.strideAt = now;
+      }
+      continue;
+    }
+
+    // ---- Sidewalk peds (existing behavior) ----
     // Animate active road-cross
     if (p.crossT > 0) {
       p.crossT -= dt / 1.4; // ~1.4s to cross
@@ -1052,7 +1174,7 @@ function stepDirectedCars(cars, streets, occupancy, dt, now, onArrived) {
   }
 }
 
-function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, lightInfo, trafficLights, soundOn, dispatches, onDispatchDone }) {
+function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, lightInfo, trafficLights, soundOn, dispatches, onDispatchDone, allBuildings }) {
   const motionRef = useRef(new Map());
   const pedRef = useRef([]);
   const fireTrucksRef = useRef([]);
@@ -1063,7 +1185,7 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
   const policeCooldownRef = useRef(35); // first police patrol after 35s
   // Keep latest props accessible from the RAF loop without re-subscribing.
   const propsRef = useRef({});
-  propsRef.current = { vehicles, streets, busStops, fireDepts, policeStations, lightInfo, soundOn, dispatches, onDispatchDone };
+  propsRef.current = { vehicles, streets, busStops, fireDepts, policeStations, lightInfo, soundOn, dispatches, onDispatchDone, allBuildings };
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -1109,7 +1231,7 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
         else if (kind === 'bus') playBusDing();
       }) : null;
       stepVehicles(motionRef.current, p.vehicles, p.streets, p.busStops, lInfo, occ, sound, dt, now);
-      stepPedestrians(pedRef.current, p.streets, lInfo, dt, now);
+      stepPedestrians(pedRef.current, p.streets, lInfo, p.allBuildings, dt, now);
       stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, sound, dt, now, FIRE_CFG);
       stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, sound, dt, now, POLICE_CFG);
       stepDirectedCars(directedRef.current, p.streets, occ, dt, now, p.onDispatchDone);
@@ -1895,6 +2017,7 @@ window.CityCanvas = function CityCanvas({
               soundOn={soundOn}
               dispatches={dispatches}
               onDispatchDone={onDispatchDone}
+              allBuildings={state.buildings}
             />
           )}
           {/* protractor overlay */}
