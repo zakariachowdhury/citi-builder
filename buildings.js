@@ -390,6 +390,123 @@ window.Buildings = (function() {
     `;
   }
 
+  function donutShop() {
+    return `
+      <rect x="-22" y="-12" width="44" height="24" fill="#f8d4e0" stroke="${STROKE}" stroke-width="${SW}" rx="2"/>
+      <rect x="-22" y="-12" width="44" height="6" fill="#a0492a" stroke="${STROKE}" stroke-width="1.4"/>
+      <text x="0" y="-7" text-anchor="middle" font-size="6" font-family="Patrick Hand" fill="#fff">DONUTS</text>
+      <!-- big donut -->
+      <circle cx="-11" cy="3" r="6" fill="#e8b89a" stroke="${STROKE}" stroke-width="1.2"/>
+      <circle cx="-11" cy="3" r="2.4" fill="#f8d4e0" stroke="${STROKE}" stroke-width="0.7"/>
+      <line x1="-13" y1="0"  x2="-12" y2="1"  stroke="#d94c3a" stroke-width="0.9"/>
+      <line x1="-9"  y1="0"  x2="-10" y2="1"  stroke="#3b6fb5" stroke-width="0.9"/>
+      <line x1="-12" y1="6"  x2="-13" y2="7"  stroke="#4f8b4a" stroke-width="0.9"/>
+      <line x1="-10" y1="6"  x2="-9"  y2="7"  stroke="#e7b94a" stroke-width="0.9"/>
+      <!-- door + window -->
+      <rect x="6" y="-2" width="8" height="14" fill="#a0492a" stroke="${STROKE}" stroke-width="0.9"/>
+      <circle cx="12" cy="5" r="0.7" fill="${STROKE}"/>
+      <rect x="-2" y="-2" width="6" height="6" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.6"/>
+    `;
+  }
+
+  function hospital() {
+    return `
+      <rect x="-22" y="-14" width="44" height="28" fill="#f5f5f5" stroke="${STROKE}" stroke-width="${SW}" rx="2"/>
+      <rect x="-22" y="-14" width="44" height="6" fill="#d94c3a" stroke="${STROKE}" stroke-width="1.4"/>
+      <text x="0" y="-9.5" text-anchor="middle" font-size="6" font-family="Patrick Hand" fill="#fff">HOSPITAL</text>
+      <!-- big red cross -->
+      <rect x="-3" y="-4" width="6" height="14" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.6"/>
+      <rect x="-7" y="0"  width="14" height="6" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.6"/>
+      <!-- windows -->
+      <rect x="-19" y="-3" width="4" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="-19" y="4"  width="4" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="15"  y="-3" width="4" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="15"  y="4"  width="4" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <!-- door -->
+      <rect x="-4" y="9" width="8" height="5" fill="#3a2a18" stroke="${STROKE}" stroke-width="0.6"/>
+    `;
+  }
+
+  function amusementPark() {
+    // Top-down-ish: a colorful Ferris wheel with cars around the rim.
+    return `
+      <!-- pedestal -->
+      <rect x="-2.5" y="10" width="5" height="10" fill="#7a5230" stroke="${STROKE}" stroke-width="${SW}"/>
+      <line x1="-9" y1="20" x2="9" y2="20" stroke="${STROKE}" stroke-width="1.5"/>
+      <!-- spokes -->
+      <line x1="0" y1="6" x2="-18" y2="6"  stroke="${STROKE}" stroke-width="1"/>
+      <line x1="0" y1="6" x2="18"  y2="6"  stroke="${STROKE}" stroke-width="1"/>
+      <line x1="0" y1="6" x2="0"   y2="-12" stroke="${STROKE}" stroke-width="1"/>
+      <line x1="0" y1="6" x2="-13" y2="-7"  stroke="${STROKE}" stroke-width="1"/>
+      <line x1="0" y1="6" x2="13"  y2="-7"  stroke="${STROKE}" stroke-width="1"/>
+      <line x1="0" y1="6" x2="-13" y2="19"  stroke="${STROKE}" stroke-width="1"/>
+      <line x1="0" y1="6" x2="13"  y2="19"  stroke="${STROKE}" stroke-width="1"/>
+      <!-- rim -->
+      <circle cx="0" cy="6" r="18" fill="none" stroke="${STROKE}" stroke-width="1.5"/>
+      <!-- carriages -->
+      <circle cx="-18" cy="6"  r="3" fill="#d94c3a" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="18"  cy="6"  r="3" fill="#3b6fb5" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="0"   cy="-12" r="3" fill="#e7b94a" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="-13" cy="-7"  r="3" fill="#4f8b4a" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="13"  cy="-7"  r="3" fill="#8a5fb0" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="-13" cy="19"  r="3" fill="#de8348" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="13"  cy="19"  r="3" fill="#d97ba0" stroke="${STROKE}" stroke-width="0.8"/>
+      <!-- center hub -->
+      <circle cx="0" cy="6" r="2.6" fill="#cdb992" stroke="${STROKE}" stroke-width="0.9"/>
+    `;
+  }
+
+  function hotel() {
+    return `
+      <!-- main building -->
+      <rect x="-18" y="-22" width="36" height="44" fill="#cdb992" stroke="${STROKE}" stroke-width="${SW}" rx="1.5"/>
+      <!-- top sign band -->
+      <rect x="-18" y="-22" width="36" height="6" fill="#3b6fb5" stroke="${STROKE}" stroke-width="1.2"/>
+      <text x="0" y="-17.5" text-anchor="middle" font-size="6" font-family="Patrick Hand" fill="#fff">HOTEL</text>
+      <!-- 3 floors of 3 windows -->
+      <rect x="-14" y="-12" width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="-3"  y="-12" width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="8"   y="-12" width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="-14" y="-5"  width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="-3"  y="-5"  width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="8"   y="-5"  width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="-14" y="2"   width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="-3"  y="2"   width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="8"   y="2"   width="6" height="4" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <!-- ground floor entrance -->
+      <rect x="-4" y="9" width="8" height="13" fill="#3b6fb5" stroke="${STROKE}" stroke-width="0.8"/>
+      <circle cx="2.5" cy="16" r="0.7" fill="${STROKE}"/>
+      <!-- side ground windows -->
+      <rect x="-14" y="11" width="5" height="6" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <rect x="9"   y="11" width="5" height="6" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <!-- canopy -->
+      <line x1="-8" y1="9" x2="8" y2="9" stroke="${STROKE}" stroke-width="1.6"/>
+    `;
+  }
+
+  function museum() {
+    return `
+      <!-- triangular pediment -->
+      <path d="M -22 -8 L 0 -22 L 22 -8 Z" fill="#f0e8d8" stroke="${STROKE}" stroke-width="${SW}"/>
+      <!-- decorative dot in pediment -->
+      <circle cx="0" cy="-12" r="1.4" fill="${STROKE}"/>
+      <!-- horizontal architrave -->
+      <rect x="-22" y="-9" width="44" height="3" fill="#cdb992" stroke="${STROKE}" stroke-width="1"/>
+      <!-- main hall -->
+      <rect x="-20" y="-6" width="40" height="22" fill="#f0e8d8" stroke="${STROKE}" stroke-width="${SW}"/>
+      <!-- columns -->
+      <rect x="-17" y="-6" width="3" height="20" fill="#fff" stroke="${STROKE}" stroke-width="0.6"/>
+      <rect x="-9"  y="-6" width="3" height="20" fill="#fff" stroke="${STROKE}" stroke-width="0.6"/>
+      <rect x="-1"  y="-6" width="3" height="20" fill="#fff" stroke="${STROKE}" stroke-width="0.6"/>
+      <rect x="6"   y="-6" width="3" height="20" fill="#fff" stroke="${STROKE}" stroke-width="0.6"/>
+      <rect x="14"  y="-6" width="3" height="20" fill="#fff" stroke="${STROKE}" stroke-width="0.6"/>
+      <!-- entrance steps -->
+      <rect x="-22" y="14" width="44" height="3" fill="#cdb992" stroke="${STROKE}" stroke-width="0.8"/>
+      <!-- doorway -->
+      <rect x="-3" y="5" width="6" height="9" fill="#3a2a18" stroke="${STROKE}" stroke-width="0.5"/>
+    `;
+  }
+
   const REQUIRED = [
     { kind: 'library',    label: 'Library',       required: true,  color: '#bfdbfe', size: 56, draw: lib,        hint: 'Vertical angles with a Park' },
     { kind: 'park',       label: 'Park',          required: true,  color: '#cbe6a8', size: 60, draw: park,       hint: 'Right-angle corner with the School; vertical angles with the Library' },
@@ -429,6 +546,11 @@ window.Buildings = (function() {
     { kind: 'golf',         label: 'Golf Course',  size: 64, draw: golfCourse,      stackable: true },
     { kind: 'streetlight',  label: 'Streetlight',  size: 26, draw: streetlight,     stackable: true },
     { kind: 'mailbox',      label: 'Mailbox',      size: 18, draw: mailbox,         stackable: true },
+    { kind: 'donut',        label: 'Donut Shop',   size: 50, draw: donutShop,       stackable: true },
+    { kind: 'hospital',     label: 'Hospital',     size: 56, draw: hospital,        stackable: true },
+    { kind: 'amusement',    label: 'Amusement Park', size: 64, draw: amusementPark, stackable: true },
+    { kind: 'hotel',        label: 'Hotel',        size: 60, draw: hotel,           stackable: true },
+    { kind: 'museum',       label: 'Museum',       size: 60, draw: museum,          stackable: true },
   ];
 
   const ALL = [...REQUIRED, ...DECOR];

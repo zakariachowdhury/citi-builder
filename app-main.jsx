@@ -44,6 +44,8 @@ const POPULATION_WEIGHTS = {
   car: 2, bus: 18, busStop: 0, streetlight: 0,
   playground: 12, parkingLot: 0, gazebo: 0,
   soccer: 22, tennis: 4, volleyball: 6, basketball: 10, golf: 14,
+  // larger civic & leisure buildings
+  donut: 8, hospital: 140, amusement: 95, hotel: 70, museum: 40,
 };
 function computePopulation(buildings) {
   if (!buildings || !buildings.length) return 0;

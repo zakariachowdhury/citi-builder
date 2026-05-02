@@ -250,6 +250,9 @@ function Protractor({ it }) {
 // On reaching an endpoint they pick a random connected segment (within 12 px)
 // to continue on; if none exist, they reverse. Pauses fire ~5%/s for variety.
 const VEHICLE_KINDS = new Set(['car', 'bus']);
+// Decor-tier buildings that still attract pedestrians (in addition to all
+// REQUIRED civic buildings).
+const PED_DESTINATIONS = new Set(['hospital', 'museum', 'hotel', 'amusement', 'donut']);
 
 const VehicleVisual = React.memo(function VehicleVisual({ kind, variant }) {
   const def = Buildings.getDef(kind);
@@ -1333,7 +1336,7 @@ window.CityCanvas = function CityCanvas({
               vehicles={state.buildings.filter(b => VEHICLE_KINDS.has(b.kind))}
               streets={state.streets}
               busStops={state.buildings.filter(b => b.kind === 'busStop')}
-              peopleSeeds={state.buildings.filter(b => Buildings.REQUIRED.some(r => r.kind === b.kind))}
+              peopleSeeds={state.buildings.filter(b => Buildings.REQUIRED.some(r => r.kind === b.kind) || PED_DESTINATIONS.has(b.kind))}
               fireDepts={state.buildings.filter(b => b.kind === 'fire')}
               policeStations={state.buildings.filter(b => b.kind === 'police')}
               lightInfo={{ byStreet: lightData.byStreet }}
