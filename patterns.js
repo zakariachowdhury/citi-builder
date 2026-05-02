@@ -165,9 +165,17 @@ window.Patterns = (function() {
       for (const p of placed) {
         if (Math.hypot(x - p.x, y - p.y) < half + p.half + 6) return false;
       }
-      // keep off the road centerlines
-      for (const xv of xs) if (Math.abs(x - xv) < ROAD_HALF + half) return false;
-      for (const yv of ys) if (Math.abs(y - yv) < ROAD_HALF + half) return false;
+      // keep off every street segment (including any diagonal). Distance
+      // from point to segment, with the road's painted half-width buffer.
+      for (const seg of streets) {
+        const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) continue;
+        let t = ((x - seg.x1) * dx + (y - seg.y1) * dy) / len2;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        const px = seg.x1 + t * dx, py = seg.y1 + t * dy;
+        if (Math.hypot(x - px, y - py) < ROAD_HALF + half) return false;
+      }
       return true;
     }
     function tryPlaceInCell(cell, kind, half, padding, spacing, label) {

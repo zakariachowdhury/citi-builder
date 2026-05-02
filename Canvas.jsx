@@ -179,18 +179,30 @@ function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStre
             opacity="0.95" pointerEvents="none"/>
         )))}
       </g>
-      {/* PASS 4: street name labels */}
+      {/* PASS 4: street name labels — placed at the midpoint of the LONGEST
+          gap between intersections, so the label doesn't sit on top of a
+          traffic light or the intersection itself. */}
       <g>
         {streets.map(s => {
           if (!s.name) return null;
           const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
           if (len < 80) return null;
+          const ts = breaks.get(s.id) || [];
+          const stops = [0, ...ts, 1];
+          let bestStart = 0, bestEnd = 1, bestGap = -1;
+          for (let i = 0; i < stops.length - 1; i++) {
+            const gap = stops[i + 1] - stops[i];
+            if (gap > bestGap) { bestGap = gap; bestStart = stops[i]; bestEnd = stops[i + 1]; }
+          }
+          const gapLen = bestGap * len;
+          if (gapLen < 70) return null; // not enough room for the chip
+          const midT = (bestStart + bestEnd) / 2;
+          const midX = s.x1 + midT * (s.x2 - s.x1);
+          const midY = s.y1 + midT * (s.y2 - s.y1);
           const angle = Math.atan2(s.y2 - s.y1, s.x2 - s.x1) * 180 / Math.PI;
           let textAngle = angle;
           if (textAngle > 90) textAngle -= 180;
           if (textAngle < -90) textAngle += 180;
-          const midX = (s.x1 + s.x2) / 2;
-          const midY = (s.y1 + s.y2) / 2;
           const labelW = Math.max(60, (s.name || '').length * 9 + 14);
           return (
             <g key={'lbl-'+s.id}
