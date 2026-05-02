@@ -582,6 +582,90 @@ window.Buildings = (function() {
     `;
   }
 
+  function church() {
+    return `
+      <!-- main hall -->
+      <rect x="-16" y="-6" width="32" height="22" fill="#f0e8d8" stroke="${STROKE}" stroke-width="${SW}" rx="1"/>
+      <!-- gabled roof -->
+      <polygon points="-18,-6 0,-18 18,-6" fill="#a0492a" stroke="${STROKE}" stroke-width="${SW}"/>
+      <!-- steeple base -->
+      <rect x="-3.5" y="-13" width="7" height="6" fill="#d4a574" stroke="${STROKE}" stroke-width="0.9"/>
+      <!-- spire -->
+      <polygon points="-4,-13 0,-22 4,-13" fill="#a0492a" stroke="${STROKE}" stroke-width="0.9"/>
+      <!-- cross on top -->
+      <line x1="0" y1="-22" x2="0" y2="-28" stroke="${STROKE}" stroke-width="1.4"/>
+      <line x1="-2" y1="-26" x2="2" y2="-26" stroke="${STROKE}" stroke-width="1.4"/>
+      <!-- arched windows -->
+      <path d="M -10 0 a 3 3 0 0 1 6 0 v 6 h -6 z" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.9"/>
+      <path d="M 4 0 a 3 3 0 0 1 6 0 v 6 h -6 z" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.9"/>
+      <!-- arched front door -->
+      <path d="M -3 16 v -6 a 3 3 0 0 1 6 0 v 6 z" fill="#7a5230" stroke="${STROKE}" stroke-width="1"/>
+    `;
+  }
+
+  function statue() {
+    return `
+      <!-- pedestal -->
+      <rect x="-7" y="6" width="14" height="6" fill="#cdb992" stroke="${STROKE}" stroke-width="${SW}"/>
+      <rect x="-9" y="11" width="18" height="3" fill="#a8a09a" stroke="${STROKE}" stroke-width="0.9"/>
+      <!-- figure -->
+      <circle cx="0" cy="-8" r="3.5" fill="#a8a09a" stroke="${STROKE}" stroke-width="0.9"/>
+      <path d="M -4 -4 q 4 -2 8 0 v 10 h -8 z" fill="#a8a09a" stroke="${STROKE}" stroke-width="1"/>
+      <!-- raised arm -->
+      <line x1="3" y1="-2" x2="6" y2="-7" stroke="${STROKE}" stroke-width="2"/>
+      <circle cx="6" cy="-7" r="1" fill="#a8a09a" stroke="${STROKE}" stroke-width="0.5"/>
+    `;
+  }
+
+  function windmill() {
+    return `
+      <!-- ground shadow -->
+      <ellipse cx="0" cy="16" rx="9" ry="2" fill="rgba(42,36,24,0.15)" stroke="none"/>
+      <!-- tapered tower -->
+      <polygon points="-5,16 5,16 3,-7 -3,-7" fill="#cdb992" stroke="${STROKE}" stroke-width="${SW}"/>
+      <!-- door at base -->
+      <rect x="-2" y="10" width="4" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="0.6"/>
+      <!-- small window -->
+      <rect x="-2" y="0" width="4" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
+      <!-- top dome / cap -->
+      <ellipse cx="0" cy="-7" rx="5" ry="2.5" fill="#a0492a" stroke="${STROKE}" stroke-width="0.9"/>
+      <!-- rotating blades -->
+      <g>
+        <animateTransform attributeName="transform" type="rotate"
+          from="0 0 -7" to="360 0 -7" dur="5s" repeatCount="indefinite"/>
+        <rect x="-1" y="-21" width="2" height="14" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
+        <rect x="-1" y="-7"  width="2" height="14" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
+        <rect x="-7" y="-8"  width="14" height="2" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
+        <circle cx="0" cy="-7" r="1.4" fill="${STROKE}"/>
+      </g>
+    `;
+  }
+
+  function clockTower() {
+    return `
+      <!-- tower -->
+      <rect x="-7" y="-12" width="14" height="28" fill="#cdb992" stroke="${STROKE}" stroke-width="${SW}"/>
+      <rect x="-9" y="-14" width="18" height="3" fill="#a0492a" stroke="${STROKE}" stroke-width="0.9"/>
+      <!-- pyramidal roof -->
+      <polygon points="-9,-14 0,-22 9,-14" fill="#a0492a" stroke="${STROKE}" stroke-width="${SW}"/>
+      <!-- finial -->
+      <line x1="0" y1="-22" x2="0" y2="-26" stroke="${STROKE}" stroke-width="1"/>
+      <circle cx="0" cy="-26" r="1" fill="#e7b94a" stroke="${STROKE}" stroke-width="0.5"/>
+      <!-- clock face -->
+      <circle cx="0" cy="-3" r="5" fill="#fff8e0" stroke="${STROKE}" stroke-width="1.2"/>
+      <line x1="0" y1="-3" x2="0" y2="-7" stroke="${STROKE}" stroke-width="1"/>
+      <line x1="0" y1="-3" x2="3" y2="-3" stroke="${STROKE}" stroke-width="1"/>
+      <circle cx="0" cy="-3" r="0.6" fill="${STROKE}"/>
+      <!-- small markers at 12/3/6/9 -->
+      <circle cx="0" cy="-7.5" r="0.3" fill="${STROKE}"/>
+      <circle cx="3.5" cy="-3" r="0.3" fill="${STROKE}"/>
+      <circle cx="0" cy="1.5" r="0.3" fill="${STROKE}"/>
+      <circle cx="-3.5" cy="-3" r="0.3" fill="${STROKE}"/>
+      <!-- door -->
+      <rect x="-2" y="10" width="4" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="0.6"/>
+    `;
+  }
+
   function museum() {
     return `
       <!-- triangular pediment -->
@@ -649,6 +733,10 @@ window.Buildings = (function() {
     { kind: 'amusement',    label: 'Amusement Park', size: 64, draw: amusementPark, stackable: true },
     { kind: 'hotel',        label: 'Hotel',        size: 60, draw: hotel,           stackable: true },
     { kind: 'museum',       label: 'Museum',       size: 60, draw: museum,          stackable: true },
+    { kind: 'church',       label: 'Church',       size: 56, draw: church,          stackable: true },
+    { kind: 'clockTower',   label: 'Clock Tower',  size: 50, draw: clockTower,      stackable: true },
+    { kind: 'windmill',     label: 'Windmill',     size: 44, draw: windmill,        stackable: true },
+    { kind: 'statue',       label: 'Statue',       size: 30, draw: statue,          stackable: true },
   ];
 
   const ALL = [...REQUIRED, ...DECOR];

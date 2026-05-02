@@ -1123,22 +1123,24 @@ function Crosswalks({ items, streets }) {
 
 // ============ TRAFFIC LIGHTS ============
 // Drawn at right-angle intersections; cycle in sync with currentLightPhase().
-// One small upright light box (red on top, green on bottom).
-function TLBox({ x, y, green }) {
+// A horizontal stoplight box (red on left end, green on right end). When
+// rotated by the road angle it becomes parallel to that road — so the
+// horizontal road's signal looks horizontal and the vertical road's signal
+// looks vertical, making the association unmistakable.
+function TLBox({ x, y, green, angle }) {
   return (
-    <g transform={`translate(${x},${y})`}>
-      <rect x="-3" y="-8" width="6" height="16" rx="1.4"
+    <g transform={`translate(${x},${y}) rotate(${angle})`}>
+      <rect x="-9" y="-3.5" width="18" height="7" rx="1.6"
             fill="#1a1a1a" stroke="#2a2418" strokeWidth="0.5"/>
-      <circle cx="0" cy="-4" r="2" fill={green ? '#440000' : '#ff3838'}/>
-      <circle cx="0" cy="4"  r="2" fill={green ? '#3aff3a' : '#003a00'}/>
+      <circle cx="-4.5" cy="0" r="2.2" fill={green ? '#440000' : '#ff3838'}/>
+      <circle cx="4.5"  cy="0" r="2.2" fill={green ? '#3aff3a' : '#003a00'}/>
     </g>
   );
 }
-// Two lights per right-angle intersection, placed at OPPOSITE intersection
-// corners (the natural sight line for traffic approaching along each road).
-// Each corner is at intersection_center ± R*perpA ± R*perpB, where perpA/B
-// are unit perpendiculars to each crossing street. Stays clear of the
-// painted road on both sides.
+// Two lights per right-angle intersection, each oriented along its road and
+// placed perpendicular to that road so it sits off the asphalt. Light A is
+// on the perpA-positive side; Light B on the perpB-positive side — those are
+// distinct quadrants for any right-angle pair, so they never overlap.
 function TrafficLight({ ix, iy, sA, sB, phase }) {
   const dxA = sA.x2 - sA.x1, dyA = sA.y2 - sA.y1;
   const lenA = Math.hypot(dxA, dyA) || 1;
@@ -1147,19 +1149,13 @@ function TrafficLight({ ix, iy, sA, sB, phase }) {
   // Perpendicular (CCW in screen coords): (x,y) -> (y, -x).
   const pAx =  dyA / lenA, pAy = -dxA / lenA;
   const pBx =  dyB / lenB, pBy = -dxB / lenB;
-  const R = 22;
+  const R = 24;
+  const angleA = Math.atan2(dyA, dxA) * 180 / Math.PI;
+  const angleB = Math.atan2(dyB, dxB) * 180 / Math.PI;
   return (
     <g pointerEvents="none">
-      {/* Light controlling road A — corner toward perpA + perpB */}
-      <TLBox
-        x={ix + pAx * R + pBx * R}
-        y={iy + pAy * R + pBy * R}
-        green={phase === 0}/>
-      {/* Light controlling road B — opposite corner */}
-      <TLBox
-        x={ix - pAx * R - pBx * R}
-        y={iy - pAy * R - pBy * R}
-        green={phase === 1}/>
+      <TLBox x={ix + pAx * R} y={iy + pAy * R} green={phase === 0} angle={angleA}/>
+      <TLBox x={ix + pBx * R} y={iy + pBy * R} green={phase === 1} angle={angleB}/>
     </g>
   );
 }

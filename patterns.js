@@ -267,7 +267,8 @@ window.Patterns = (function() {
       if (rot > 90) rot -= 180; else if (rot < -90) rot += 180;
       add(kind, seg.x1 + t * dx + px * offset, seg.y1 + t * dy + py * offset, {
         rot,
-        variant: Math.floor(rng() * 9),
+        // 0-35 covers all 4 car shapes (sedan/SUV/pickup/van) × 9 colors.
+        variant: Math.floor(rng() * 36),
       });
     }
     // ~50% of streets get a car

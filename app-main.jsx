@@ -46,6 +46,7 @@ const POPULATION_WEIGHTS = {
   soccer: 22, tennis: 4, volleyball: 6, basketball: 10, golf: 14,
   // larger civic & leisure buildings
   donut: 8, hospital: 140, amusement: 95, hotel: 70, museum: 40,
+  church: 55, clockTower: 6, windmill: 4, statue: 0,
 };
 function computePopulation(buildings) {
   if (!buildings || !buildings.length) return 0;
@@ -587,7 +588,9 @@ function App() {
         x: street.x1 + t * dx + (-uy) * offset,
         y: street.y1 + t * dy + ux * offset,
         rot,
-        variant: Math.floor(Math.random() * 9),
+        // Variant range covers 4 body shapes × 9 colors = 36; use 36 so all
+        // shapes (sedan, SUV, pickup, van) appear, not just sedans.
+        variant: Math.floor(Math.random() * 36),
         label: '',
       }],
     }));
