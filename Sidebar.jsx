@@ -1,7 +1,7 @@
 // Sidebar.jsx — left palette + right rubric
 const { useState: useStateS } = React;
 
-window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onPickPattern, onPickFinalProject, onClearAll }) {
+window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onPickPattern, onPickFinalProject, onClearAll, armedKind, onArmKind }) {
   const [tab, setTab] = useStateS('required');
   const placedKinds = new Set(state.buildings.map(b => b.kind));
 
@@ -55,14 +55,15 @@ window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onP
           return (
             <div
               key={b.kind}
-              className={`palette-item ${b.required ? 'required' : ''} ${placed ? 'placed' : ''}`}
+              className={`palette-item ${b.required ? 'required' : ''} ${placed ? 'placed' : ''} ${armedKind === b.kind ? 'armed' : ''}`}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData('text/building', b.kind);
                 e.dataTransfer.effectAllowed = 'copy';
                 onPaletteDragStart && onPaletteDragStart(b.kind);
               }}
-              title={b.hint || b.label}
+              onClick={(e) => { e.stopPropagation(); onArmKind && onArmKind(b.kind); }}
+              title={(b.hint || b.label) + ' — drag onto map, or tap then tap the map'}
             >
               <svg className="ic" viewBox={`-${b.size/2 + 4} -${b.size/2 + 4} ${b.size + 8} ${b.size + 8}`}
                    width="46" height="46">

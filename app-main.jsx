@@ -158,6 +158,7 @@ function App() {
   const [helpOpen, setHelpOpen] = useStateA(false);
   const [projectsOpen, setProjectsOpen] = useStateA(false);
   const [dispatches, setDispatches] = useStateA([]);
+  const [armedKind, setArmedKind] = useStateA(null); // touch-friendly tap-to-place
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
@@ -663,6 +664,8 @@ function App() {
         onPickPattern={pickPattern}
         onPickFinalProject={pickFinalProject}
         onClearAll={clearAll}
+        armedKind={armedKind}
+        onArmKind={(kind) => setArmedKind(prev => prev === kind ? null : kind)}
       />
 
       <div className="center-col">
@@ -689,6 +692,8 @@ function App() {
           dispatches={dispatches}
           onDispatch={dispatchCarTo}
           onDispatchDone={clearDispatch}
+          armedKind={armedKind}
+          onArmedConsumed={() => setArmedKind(null)}
         />
 
         {/* Title bar overlay */}

@@ -280,9 +280,34 @@ function Intersection({ it, showAngles }) {
 }
 
 // Building rendered via inline SVG markup
+// Long-press helper for touch — fires onContextMenu after 600 ms if pointer
+// hasn't moved >6 px or lifted. Mouse pointers are skipped (right-click
+// already opens the menu).
+function useLongPress(onLongPress) {
+  const ref = useRef(null);
+  function start(e) {
+    if (e.pointerType === 'mouse' || !onLongPress) return;
+    const sx = e.clientX, sy = e.clientY;
+    ref.current = setTimeout(() => onLongPress(e, sx, sy), 600);
+    e.currentTarget._lpsx = sx;
+    e.currentTarget._lpsy = sy;
+  }
+  function move(e) {
+    if (ref.current && (Math.abs(e.clientX - e.currentTarget._lpsx) > 6 ||
+                        Math.abs(e.clientY - e.currentTarget._lpsy) > 6)) {
+      clearTimeout(ref.current); ref.current = null;
+    }
+  }
+  function end() { if (ref.current) { clearTimeout(ref.current); ref.current = null; } }
+  return { onPointerDown: start, onPointerMove: move, onPointerUp: end, onPointerCancel: end };
+}
+
 function Building({ b, def, selected, onMouseDown, onClick, onDoubleClick, onContextMenu }) {
   if (!def) return null;
   const inner = def.draw(b.variant || 0);
+  const longPress = useLongPress((e, x, y) => onContextMenu && onContextMenu({
+    preventDefault: () => {}, stopPropagation: () => {}, clientX: x, clientY: y,
+  }));
   return (
     <g
       transform={`translate(${b.x},${b.y}) rotate(${b.rot || 0})`}
@@ -290,6 +315,7 @@ function Building({ b, def, selected, onMouseDown, onClick, onDoubleClick, onCon
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      {...longPress}
       style={{ cursor: 'grab' }}
     >
       {selected && (
@@ -1150,6 +1176,8 @@ window.CityCanvas = function CityCanvas({
   dispatches,        // active click-dispatched cars
   onDispatch,        // (building) => create a dispatch entry
   onDispatchDone,    // (id) => remove the dispatch entry once arrived
+  armedKind,         // touch-friendly tap-to-arm: kind to place on next bg tap
+  onArmedConsumed,
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -1522,10 +1550,17 @@ window.CityCanvas = function CityCanvas({
       x: e.clientX, y: e.clientY });
   }
 
-  function handleBgClick() {
+  function handleBgClick(e) {
     // Don't clear when a marquee selection just finished (it ran inside
     // onMouseUp before the click event fired).
     if (marquee) return;
+    // Tap-to-place: if a palette item is armed, drop it where the user tapped.
+    if (armedKind && onPaletteDrop && e && typeof e.clientX === 'number') {
+      const p = toWorld(e.clientX, e.clientY);
+      onPaletteDrop(armedKind, p.x, p.y);
+      onArmedConsumed && onArmedConsumed();
+      return;
+    }
     setSelectedId(null);
     setEditName(null);
     setContextMenu(null);
@@ -1667,7 +1702,8 @@ window.CityCanvas = function CityCanvas({
   const viewTransform = `translate(${view.x},${view.y}) scale(${view.scale})`;
 
   // Cursor for draw tool
-  const cursor = tool === 'draw' ? 'crosshair'
+  const cursor = armedKind ? 'copy'
+              : tool === 'draw' ? 'crosshair'
               : tool === 'pan' ? (isPanning ? 'grabbing' : 'grab')
               : tool === 'dispatch' ? 'crosshair'
               : 'default';

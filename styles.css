@@ -102,6 +102,10 @@ button { font-family: var(--hand); cursor: pointer; }
   border: 2px solid var(--ink);
   border-radius: 14px;
   background: #ffffff;
+  /* Prevent touch from scrolling/zooming the page so drags reach our handlers */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .canvas-wrap > svg.city-svg {
   width: 100%;
@@ -442,6 +446,11 @@ button { font-family: var(--hand); cursor: pointer; }
   position: relative;
   box-shadow: 2px 2px 0 rgba(42,36,24,0.15);
   transition: transform 0.08s;
+  touch-action: manipulation;
+}
+.palette-item.armed {
+  background: var(--crayon-yellow);
+  box-shadow: 3px 3px 0 rgba(42,36,24,0.3);
 }
 .palette-item:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 rgba(42,36,24,0.25); }
 .palette-item:active { cursor: grabbing; }
