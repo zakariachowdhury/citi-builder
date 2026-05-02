@@ -18,6 +18,15 @@ function PaperDefs() {
         <circle cx="4" cy="6" r="0.6" fill="#cfc6ad" opacity="0.45"/>
         <circle cx="14" cy="13" r="0.5" fill="#cfc6ad" opacity="0.45"/>
       </pattern>
+      <filter id="bldg-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur in="SourceAlpha" stdDeviation="1.6"/>
+        <feOffset dx="1.4" dy="2.2" result="offsetblur"/>
+        <feComponentTransfer><feFuncA type="linear" slope="0.22"/></feComponentTransfer>
+        <feMerge>
+          <feMergeNode/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
     </defs>
   );
 }
@@ -232,7 +241,7 @@ function Building({ b, def, selected, onMouseDown, onClick, onDoubleClick }) {
               fill="none" stroke="#3b6fb5" strokeWidth="2"
               strokeDasharray="4 3" rx="6"/>
       )}
-      <g dangerouslySetInnerHTML={{ __html: inner }}/>
+      <g filter="url(#bldg-shadow)" dangerouslySetInnerHTML={{ __html: inner }}/>
       {b.label && def.size >= 30 && (
         <text className="building-label" y={def.size/2 + 13}>{b.label}</text>
       )}
@@ -598,16 +607,16 @@ function Person({ p }) {
 
 // ============ EMERGENCY DISPATCH (fire trucks, police cars) ============
 const FIRE_CFG = {
-  kind: 'firetruck', cap: 2,
+  kind: 'firetruck', cap: 1,
   speedMin: 110, speedMax: 160,
   lifetimeMin: 12000, lifetimeMax: 20000,
-  cooldownMin: 25, cooldownMax: 55,
+  cooldownMin: 70, cooldownMax: 150,
 };
 const POLICE_CFG = {
-  kind: 'policecar', cap: 2,
+  kind: 'policecar', cap: 1,
   speedMin: 100, speedMax: 150,
   lifetimeMin: 15000, lifetimeMax: 25000,
-  cooldownMin: 22, cooldownMax: 50,
+  cooldownMin: 55, cooldownMax: 130,
 };
 
 function stepDispatchedFleet(items, cooldownRef, stations, streets, occupancy, sound, dt, now, cfg) {
@@ -743,6 +752,46 @@ function DispatchedVehicle({ d }) {
   );
 }
 
+// ============ CROSSWALKS ============
+// Painted-stripe crosswalks across each road approach at a right-angle
+// intersection. Drawn on top of asphalt fill but under centerlines.
+function CrosswalkBars({ s, ix, iy, side }) {
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const pX = -uy, pY = ux;
+  const baseX = ix + ux * side * 16;
+  const baseY = iy + uy * side * 16;
+  const angle = Math.atan2(pY, pX) * 180 / Math.PI;
+  return (
+    <g transform={`translate(${baseX},${baseY}) rotate(${angle})`}>
+      {[-9, -3, 3, 9].map((off, i) => (
+        <rect key={i} x="-13" y={off - 1.4} width="26" height="2.8"
+              fill="#ffffff" opacity="0.85"/>
+      ))}
+    </g>
+  );
+}
+function Crosswalks({ items, streets }) {
+  return (
+    <g pointerEvents="none">
+      {items.map((it, idx) => {
+        const sA = streets.find(s => s.id === it.streetA);
+        const sB = streets.find(s => s.id === it.streetB);
+        if (!sA || !sB) return null;
+        return (
+          <g key={`cw-${idx}`}>
+            <CrosswalkBars s={sA} ix={it.x} iy={it.y} side={-1}/>
+            <CrosswalkBars s={sA} ix={it.x} iy={it.y} side={+1}/>
+            <CrosswalkBars s={sB} ix={it.x} iy={it.y} side={-1}/>
+            <CrosswalkBars s={sB} ix={it.x} iy={it.y} side={+1}/>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 // ============ TRAFFIC LIGHTS ============
 // Drawn at right-angle intersections; cycle in sync with currentLightPhase().
 function TrafficLight({ x, y, phase }) {
@@ -761,8 +810,8 @@ function CityLife({ vehicles, streets, busStops, peopleSeeds, fireDepts, policeS
   const pedRef = useRef([]);
   const fireTrucksRef = useRef([]);
   const policeCarsRef = useRef([]);
-  const fireCooldownRef = useRef(8);   // first fire dispatch after 8s
-  const policeCooldownRef = useRef(15); // first police patrol after 15s
+  const fireCooldownRef = useRef(45);   // first fire dispatch after 45s
+  const policeCooldownRef = useRef(35); // first police patrol after 35s
   // Keep latest props accessible from the RAF loop without re-subscribing.
   const propsRef = useRef({});
   propsRef.current = { vehicles, streets, busStops, peopleSeeds, fireDepts, policeStations, lightInfo, soundOn };
@@ -1267,6 +1316,10 @@ window.CityCanvas = function CityCanvas({
             }}
             hoverEndpoint={hoverEndpoint}
           />
+          {/* crosswalks at right-angle intersections */}
+          <Crosswalks
+            items={intersections.filter(it => it.type === 'right')}
+            streets={state.streets}/>
           {/* intersection labels */}
           {intersections.map((it, i) => (
             <Intersection key={i} it={it} showAngles={showAngles}/>
