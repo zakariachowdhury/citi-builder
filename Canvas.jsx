@@ -90,7 +90,7 @@ function snapToGrid(x, y) {
 // pass 2: lighter asphalt fill (all streets) → erases the borders at crossings
 // pass 3: dashed centerlines, BUT broken at every intersection
 // pass 4: invisible click-targets per street (so the user can still select)
-function RoadNetwork({ streets, intersections, selectedId, onStreetClick, onStreetDouble, onEndpointMouseDown, hoverEndpoint }) {
+function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStreetClick, onStreetDouble, onEndpointMouseDown, hoverEndpoint }) {
   // For each street, find all intersection points and compute the "t" parameter
   // (0..1) along the segment so we know where to break the centerline.
   const breaks = useMemo(() => {
@@ -206,7 +206,8 @@ function RoadNetwork({ streets, intersections, selectedId, onStreetClick, onStre
       {/* PASS 5: invisible hit-targets for selection / dbl-click rename */}
       <g>
         {streets.map(s => {
-          const sel = selectedId?.kind === 'street' && selectedId.id === s.id;
+          const sel = (selectedId?.kind === 'street' && selectedId.id === s.id) ||
+                      (multiSelected && multiSelected.has(`street:${s.id}`));
           return (
             <g key={'hit-'+s.id}>
               {sel && (
@@ -1137,6 +1138,7 @@ window.CityCanvas = function CityCanvas({
   showAngles, showProtractor,
   onPaletteDrop, eraserMode,
   selectedId, setSelectedId,
+  multiSelected, setMultiSelected,
   bumpHistory,
   drawStyle, // string id from DRAW_STYLES
   zoomTick, fitTick, // counters: when these change, run zoom in/out / fit
@@ -1158,6 +1160,7 @@ window.CityCanvas = function CityCanvas({
   const endpointDragRef = useRef(null); // { streetId, end: 1|2 }
   const [drawPreview, setDrawPreview] = useState(null);
   const [isEditing, setIsEditing] = useState(false); // shows snap-grid dots while dragging/drawing
+  const [marquee, setMarquee] = useState(null); // {x1,y1,x2,y2} in world coords
 
   const intersections = useMemo(() => Geom.findIntersections(state.streets), [state.streets]);
 
@@ -1304,9 +1307,19 @@ window.CityCanvas = function CityCanvas({
       setIsPanning(true);
       panStart.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
       e.preventDefault();
+      return;
+    }
+    // Select mode + empty-canvas click → start a marquee selection.
+    if (tool === 'select' && e.button === 0) {
+      const p = toWorld(e.clientX, e.clientY);
+      setMarquee({ x1: p.x, y1: p.y, x2: p.x, y2: p.y });
     }
   }
   function onMouseMove(e) {
+    if (marquee) {
+      const p = toWorld(e.clientX, e.clientY);
+      setMarquee({ ...marquee, x2: p.x, y2: p.y });
+    }
     if (isPanning && panStart.current) {
       setView(v => ({ ...v,
         x: panStart.current.vx + (e.clientX - panStart.current.x),
@@ -1397,6 +1410,32 @@ window.CityCanvas = function CityCanvas({
     if (dragRef.current) dragRef.current = null;
     if (endpointDragRef.current) { endpointDragRef.current = null; setHoverEndpoint(null); setAngleHud(null); }
     setIsEditing(false);
+    if (marquee) {
+      const dx = Math.abs(marquee.x2 - marquee.x1);
+      const dy = Math.abs(marquee.y2 - marquee.y1);
+      if (dx > 6 && dy > 6) {
+        const minX = Math.min(marquee.x1, marquee.x2);
+        const maxX = Math.max(marquee.x1, marquee.x2);
+        const minY = Math.min(marquee.y1, marquee.y2);
+        const maxY = Math.max(marquee.y1, marquee.y2);
+        const sel = new Set();
+        for (const b of state.buildings) {
+          if (b.x >= minX && b.x <= maxX && b.y >= minY && b.y <= maxY) {
+            sel.add(`building:${b.id}`);
+          }
+        }
+        for (const sg of state.streets) {
+          // Street included if BOTH endpoints fall inside the marquee.
+          if (sg.x1 >= minX && sg.x1 <= maxX && sg.y1 >= minY && sg.y1 <= maxY &&
+              sg.x2 >= minX && sg.x2 <= maxX && sg.y2 >= minY && sg.y2 <= maxY) {
+            sel.add(`street:${sg.id}`);
+          }
+        }
+        setMultiSelected && setMultiSelected(sel);
+        setSelectedId(null);
+      }
+      setMarquee(null);
+    }
     if (drawPreview) {
       const len = Math.hypot(drawPreview.x2 - drawPreview.x1, drawPreview.y2 - drawPreview.y1);
       if (len > 30) {
@@ -1443,6 +1482,7 @@ window.CityCanvas = function CityCanvas({
       return;
     }
     setSelectedId({ kind: 'street', id: s.id });
+    if (setMultiSelected) setMultiSelected(new Set());
   }
   function handleStreetDouble(s, e) {
     e.stopPropagation();
@@ -1465,6 +1505,7 @@ window.CityCanvas = function CityCanvas({
       const p = toWorld(e.clientX, e.clientY);
       dragRef.current = { id: b.id, startSvg: p, origX: b.x, origY: b.y };
       setSelectedId({ kind: 'building', id: b.id });
+      if (setMultiSelected) setMultiSelected(new Set());
       setIsEditing(true);
     }
   }
@@ -1476,8 +1517,12 @@ window.CityCanvas = function CityCanvas({
   }
 
   function handleBgClick() {
+    // Don't clear when a marquee selection just finished (it ran inside
+    // onMouseUp before the click event fired).
+    if (marquee) return;
     setSelectedId(null);
     setEditName(null);
+    if (setMultiSelected && multiSelected && multiSelected.size > 0) setMultiSelected(new Set());
   }
 
   function commitName() {
@@ -1499,6 +1544,23 @@ window.CityCanvas = function CityCanvas({
     function onKey(e) {
       if (e.target.tagName === 'INPUT') return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Multi-selection takes precedence — delete every member.
+        if (multiSelected && multiSelected.size > 0) {
+          bumpHistory();
+          const dropB = new Set(), dropS = new Set();
+          for (const k of multiSelected) {
+            const [kind, id] = k.split(':');
+            if (kind === 'building') dropB.add(id);
+            else if (kind === 'street') dropS.add(id);
+          }
+          setState(s => ({
+            ...s,
+            streets: s.streets.filter(x => !dropS.has(x.id)),
+            buildings: s.buildings.filter(x => !dropB.has(x.id)),
+          }));
+          if (setMultiSelected) setMultiSelected(new Set());
+          return;
+        }
         if (!selectedId) return;
         bumpHistory();
         setState(s => selectedId.kind === 'street'
@@ -1511,11 +1573,12 @@ window.CityCanvas = function CityCanvas({
         setSelectedId(null);
         setEditName(null);
         setDrawPreview(null);
+        if (setMultiSelected) setMultiSelected(new Set());
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, bumpHistory, setState, setSelectedId]);
+  }, [selectedId, multiSelected, bumpHistory, setState, setSelectedId, setMultiSelected]);
 
   const W = 1800, H = 1100;
   const viewTransform = `translate(${view.x},${view.y}) scale(${view.scale})`;
@@ -1562,6 +1625,7 @@ window.CityCanvas = function CityCanvas({
             streets={state.streets}
             intersections={intersections}
             selectedId={selectedId}
+            multiSelected={multiSelected}
             onStreetClick={handleStreetClick}
             onStreetDouble={handleStreetDouble}
             onEndpointMouseDown={(streetId, end, e) => {
@@ -1627,10 +1691,12 @@ window.CityCanvas = function CityCanvas({
           {state.buildings.map(b => {
             if (liveMode && VEHICLE_KINDS.has(b.kind)) return null;
             const def = Buildings.getDef(b.kind);
+            const isSel = (selectedId?.kind === 'building' && selectedId.id === b.id) ||
+                          (multiSelected && multiSelected.has(`building:${b.id}`));
             return (
               <Building
                 key={b.id} b={b} def={def}
-                selected={selectedId?.kind==='building' && selectedId.id === b.id}
+                selected={isSel}
                 onMouseDown={(e) => handleBuildingMouseDown(b, e)}
                 onClick={(e) => { e.stopPropagation(); }}
                 onDoubleClick={(e) => handleBuildingDouble(b, e)}
@@ -1657,6 +1723,17 @@ window.CityCanvas = function CityCanvas({
           {/* protractor overlay */}
           <Protractor it={hoverIntersection}/>
 
+          {/* marquee selection rectangle */}
+          {marquee && (
+            <rect
+              x={Math.min(marquee.x1, marquee.x2)}
+              y={Math.min(marquee.y1, marquee.y2)}
+              width={Math.abs(marquee.x2 - marquee.x1)}
+              height={Math.abs(marquee.y2 - marquee.y1)}
+              fill="rgba(59,111,181,0.10)"
+              stroke="#3b6fb5" strokeWidth="1.4" strokeDasharray="6 4"
+              pointerEvents="none"/>
+          )}
           {/* draw preview */}
           {drawPreview && (() => {
             const style = window.DRAW_STYLES?.find(d => d.id === drawStyle) || {};

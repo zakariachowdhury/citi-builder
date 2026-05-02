@@ -150,6 +150,7 @@ function App() {
   const [soundOn, setSoundOn] = useStateA(savedPref('soundOn', true));
   const [weather, setWeather] = useStateA(savedPref('weather', 'clear'));
   const [selectedId, setSelectedId] = useStateA(null);
+  const [multiSelected, setMultiSelected] = useStateA(new Set()); // Set of "kind:id" strings
   const [toast, setToast] = useStateA(null);
   const [confirmDialog, setConfirmDialog] = useStateA(null); // { title, message, confirmLabel, danger, onConfirm }
   const [zoomTick, setZoomTick] = useStateA(0);
@@ -311,6 +312,44 @@ function App() {
     } else apply();
   }
 
+  // Duplicate everything in the multi-selection 30 px down/right; the new
+  // copies become the active multi-selection.
+  function duplicateSelection() {
+    if (!multiSelected || multiSelected.size === 0) return;
+    bumpHistory();
+    const offset = 30;
+    const newBuildings = [], newStreets = [];
+    const newSel = new Set();
+    for (const key of multiSelected) {
+      const [kind, id] = key.split(':');
+      if (kind === 'building') {
+        const b = state.buildings.find(x => x.id === id);
+        if (b) {
+          const nb = { ...b, id: nextId('b'), x: b.x + offset, y: b.y + offset };
+          newBuildings.push(nb);
+          newSel.add(`building:${nb.id}`);
+        }
+      } else if (kind === 'street') {
+        const st = state.streets.find(x => x.id === id);
+        if (st) {
+          const ns = { ...st, id: nextId('s'),
+            x1: st.x1 + offset, y1: st.y1 + offset,
+            x2: st.x2 + offset, y2: st.y2 + offset };
+          newStreets.push(ns);
+          newSel.add(`street:${ns.id}`);
+        }
+      }
+    }
+    if (!newBuildings.length && !newStreets.length) return;
+    setState(s => ({
+      ...s,
+      streets: [...s.streets, ...newStreets],
+      buildings: [...s.buildings, ...newBuildings],
+    }));
+    setMultiSelected(newSel);
+    showToast(`📋 Duplicated ${newBuildings.length + newStreets.length} item(s)`);
+  }
+
   // Drop from palette
   function onPaletteDrop(kind, x, y) {
     const def = Buildings.getDef(kind);
@@ -389,6 +428,8 @@ function App() {
         e.preventDefault(); undo();
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
         e.preventDefault(); redo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault(); duplicateSelection();
       } else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault(); setHelpOpen(o => !o);
       }
@@ -637,6 +678,8 @@ function App() {
           eraserMode={tool === 'eraser'}
           selectedId={selectedId}
           setSelectedId={setSelectedId}
+          multiSelected={multiSelected}
+          setMultiSelected={setMultiSelected}
           bumpHistory={bumpHistory}
           zoomTick={zoomTick}
           fitTick={fitTick}
@@ -827,8 +870,10 @@ function App() {
             <div className="shortcut-list">
               <div className="shortcut-row"><span><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></span><span>Undo</span></div>
               <div className="shortcut-row"><span><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></span><span>Redo</span></div>
+              <div className="shortcut-row"><span><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>D</kbd></span><span>Duplicate marquee selection</span></div>
               <div className="shortcut-row"><span><kbd>Delete</kbd> · <kbd>Backspace</kbd></span><span>Delete selected</span></div>
               <div className="shortcut-row"><span><kbd>Esc</kbd></span><span>Deselect / cancel draw</span></div>
+              <div className="shortcut-row"><span>Click + drag empty canvas (select tool)</span><span>Marquee multi-select</span></div>
               <div className="shortcut-row"><span><kbd>Shift</kbd> while drawing</span><span>Snap to 15° angle</span></div>
               <div className="shortcut-row"><span>Double-click a road or building</span><span>Rename it</span></div>
               <div className="shortcut-row"><span>Drag from the left palette</span><span>Place a building</span></div>
