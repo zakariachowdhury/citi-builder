@@ -114,36 +114,26 @@ function ConfettiLayer({ bursts, w, h }) {
 }
 
 // ============ CLOUDS ============
-// Soft hand-drawn clouds drift across the canvas in viewport space, so they
-// always glide past regardless of pan/zoom. Pure SVG <animateTransform>.
+// A single soft cloud drifts slowly across the top of the canvas in viewport
+// space (always glides past regardless of pan/zoom) and is rendered last so
+// it floats over every other layer — like a real shadow cast across the city.
 function Clouds({ w, h, on }) {
-  const clouds = useMemo(() => {
-    if (!on) return [];
-    return Array.from({ length: 6 }, (_, i) => ({
-      y: 50 + (i * 73 + 23) % Math.max(1, Math.floor(h * 0.55)),
-      scale: 0.7 + ((i * 17) % 9) / 12,
-      dur: 70 + (i * 11) % 50,
-      delay: -((i * 13) % 70),
-      opacity: 0.18 + ((i * 7) % 12) / 80,
-    }));
-  }, [w, h, on]);
   if (!on) return null;
+  const y = 70;
+  const scale = 1.2;
+  const dur = 110;
   return (
-    <g pointerEvents="none">
-      {clouds.map((c, i) => (
-        <g key={i} opacity={c.opacity}>
-          <animateTransform attributeName="transform" type="translate"
-            from={`-280 ${c.y}`} to={`${w + 280} ${c.y}`}
-            dur={`${c.dur}s`} begin={`${c.delay}s`} repeatCount="indefinite"/>
-          <g transform={`scale(${c.scale})`}>
-            <ellipse cx="0"   cy="0"   rx="46" ry="16" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
-            <ellipse cx="-28" cy="-6"  rx="22" ry="14" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
-            <ellipse cx="22"  cy="-4"  rx="26" ry="16" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
-            <ellipse cx="-8"  cy="-13" rx="20" ry="12" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
-            <ellipse cx="14"  cy="-12" rx="16" ry="10" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
-          </g>
-        </g>
-      ))}
+    <g pointerEvents="none" opacity="0.55">
+      <animateTransform attributeName="transform" type="translate"
+        from={`-320 ${y}`} to={`${w + 320} ${y}`}
+        dur={`${dur}s`} repeatCount="indefinite"/>
+      <g transform={`scale(${scale})`}>
+        <ellipse cx="0"   cy="0"   rx="46" ry="16" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+        <ellipse cx="-28" cy="-6"  rx="22" ry="14" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+        <ellipse cx="22"  cy="-4"  rx="26" ry="16" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+        <ellipse cx="-8"  cy="-13" rx="20" ry="12" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+        <ellipse cx="14"  cy="-12" rx="16" ry="10" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+      </g>
     </g>
   );
 }
@@ -2295,9 +2285,6 @@ window.CityCanvas = function CityCanvas({
         <rect x={-W} y={-H} width={W*3} height={H*3} fill="url(#grass)"/>
         <rect x={-W} y={-H} width={W*3} height={H*3} fill="url(#paper-grain)" opacity="0.6"/>
 
-        {/* Drifting clouds in viewport space — always glide past, regardless of pan/zoom */}
-        <Clouds w={W} h={H} on={vibesOn}/>
-
         <g transform={viewTransform}>
           {/* Snap grid (only while drawing or dragging) */}
           {isEditing && (
@@ -2450,6 +2437,9 @@ window.CityCanvas = function CityCanvas({
         </g>
         <Weather kind={weather} w={W} h={H}/>
         <ConfettiLayer bursts={confettiBursts} w={W} h={H}/>
+        {/* Cloud rendered LAST so it floats above the city, weather, and any
+            in-flight confetti — like a soft shadow drifting overhead. */}
+        <Clouds w={W} h={H} on={vibesOn}/>
       </svg>
 
       {editName && (
