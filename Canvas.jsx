@@ -1610,14 +1610,13 @@ window.CityCanvas = function CityCanvas({
 
   const intersections = useMemo(() => Geom.findIntersections(state.streets), [state.streets]);
 
-  // Traffic-light geometry: per right-angle intersection, the parametric
+  // Traffic-light geometry: per intersection (any angle), the parametric
   // position on each crossing street so vehicles can detect "intersection
   // ahead within X px" cheaply. Recomputed only when streets change.
   const lightData = useMemo(() => {
     const byStreet = new Map();
     const lights = [];
     for (const it of intersections) {
-      if (it.type !== 'right') continue;
       const sA = state.streets.find(s => s.id === it.streetA);
       const sB = state.streets.find(s => s.id === it.streetB);
       if (!sA || !sB) continue;
