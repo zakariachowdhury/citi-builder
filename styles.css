@@ -104,7 +104,9 @@ button { font-family: var(--hand); cursor: pointer; }
   overflow: hidden;
   border: 2px solid var(--ink);
   border-radius: 14px;
-  background: #ffffff;
+  /* Background matches the SVG grass color so any letterbox area around
+     the rendered viewBox fades into the field instead of flashing white. */
+  background: #eaf2dc;
   /* Prevent touch from scrolling/zooming the page so drags reach our handlers */
   touch-action: none;
   -webkit-user-select: none;

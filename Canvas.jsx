@@ -13,10 +13,22 @@ function PaperDefs() {
         <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
         <feColorMatrix values="0 0 0 0 0.85  0 0 0 0 0.82  0 0 0 0 0.74  0 0 0 0.04 0"/>
       </filter>
-      <pattern id="grass" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-        <rect width="20" height="20" fill="#ffffff"/>
-        <circle cx="4" cy="6" r="0.6" fill="#cfc6ad" opacity="0.45"/>
-        <circle cx="14" cy="13" r="0.5" fill="#cfc6ad" opacity="0.45"/>
+      <pattern id="grass" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+        <rect width="40" height="40" fill="#eaf2dc"/>
+        {/* Tiny grass blades — short forward strokes scattered across each tile */}
+        <path d="M 6 10 q 0.6 -3 1.5 -3" stroke="#9bbf7c" strokeWidth="0.8" fill="none" opacity="0.55"/>
+        <path d="M 18 7 q -0.5 -3 -1.4 -3" stroke="#9bbf7c" strokeWidth="0.8" fill="none" opacity="0.55"/>
+        <path d="M 30 14 q 0.7 -3 1.6 -3" stroke="#9bbf7c" strokeWidth="0.8" fill="none" opacity="0.55"/>
+        <path d="M 11 24 q -0.5 -3 -1.4 -3" stroke="#9bbf7c" strokeWidth="0.8" fill="none" opacity="0.5"/>
+        <path d="M 24 28 q 0.6 -3 1.5 -3" stroke="#9bbf7c" strokeWidth="0.8" fill="none" opacity="0.5"/>
+        <path d="M 35 32 q -0.5 -3 -1.4 -3" stroke="#9bbf7c" strokeWidth="0.8" fill="none" opacity="0.5"/>
+        <path d="M 4 36 q 0.6 -3 1.5 -3" stroke="#9bbf7c" strokeWidth="0.8" fill="none" opacity="0.5"/>
+        {/* daisies + dandelions — sparse */}
+        <circle cx="20" cy="20" r="0.7" fill="#f4d35e" opacity="0.55"/>
+        <circle cx="33" cy="6" r="0.6" fill="#fff" stroke="#cfc6ad" strokeWidth="0.3" opacity="0.6"/>
+      </pattern>
+      <pattern id="paper-grid" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+        <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#9bbf7c" strokeWidth="0.4" opacity="0.18"/>
       </pattern>
       <filter id="bldg-shadow" x="-20%" y="-20%" width="140%" height="140%">
         <feGaussianBlur in="SourceAlpha" stdDeviation="1.6"/>
@@ -187,6 +199,17 @@ function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStre
 
   return (
     <g className="road-network">
+      {/* PASS 0: sidewalk — slightly wider than the curb so a beige strip
+          peeks out on each side of every street. Helps roads feel grounded
+          on the grass. */}
+      <g>
+        {streets.map(s => (
+          <line key={'sw-'+s.id}
+            x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+            stroke="#ece2c8" strokeWidth="44" strokeLinecap="round"
+            pointerEvents="none"/>
+        ))}
+      </g>
       {/* PASS 1: dark borders (drawn under everything else) */}
       <g>
         {streets.map(s => (
@@ -2186,8 +2209,11 @@ window.CityCanvas = function CityCanvas({
         onClick={handleBgClick}
       >
         <PaperDefs/>
-        <rect x="0" y="0" width={W} height={H} fill="url(#grass)"/>
-        <rect x="0" y="0" width={W} height={H} fill="url(#paper-grain)" opacity="0.6"/>
+        {/* Grass + paper-grain extend well past the viewBox so the letterbox
+            area (when the SVG is letter-fit into the canvas wrap) doesn't
+            flash white around the edges. */}
+        <rect x={-W} y={-H} width={W*3} height={H*3} fill="url(#grass)"/>
+        <rect x={-W} y={-H} width={W*3} height={H*3} fill="url(#paper-grain)" opacity="0.6"/>
 
         {/* Drifting clouds in viewport space — always glide past, regardless of pan/zoom */}
         <Clouds w={W} h={H} on={liveMode}/>
