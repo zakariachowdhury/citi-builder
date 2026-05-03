@@ -46,7 +46,7 @@ const POPULATION_WEIGHTS = {
   soccer: 22, tennis: 4, volleyball: 6, basketball: 10, golf: 14,
   // larger civic & leisure buildings
   donut: 8, hospital: 140, amusement: 95, hotel: 70, museum: 40,
-  church: 55, clockTower: 6, windmill: 4, statue: 0,
+  church: 55, clockTower: 6, windmill: 4, statue: 0, airport: 250,
 };
 function computePopulation(buildings) {
   if (!buildings || !buildings.length) return 0;
@@ -161,6 +161,7 @@ function App() {
   const [dispatches, setDispatches] = useStateA([]);
   const [armedKind, setArmedKind] = useStateA(null); // touch-friendly tap-to-place
   const [pedTarget, setPedTarget] = useStateA(savedPref('pedTarget', 8));
+  const [planeTarget, setPlaneTarget] = useStateA(savedPref('planeTarget', 2));
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
@@ -173,10 +174,10 @@ function App() {
   useEffectA(() => {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget,
+        tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget, planeTarget,
       }));
     } catch (e) {}
-  }, [tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget]);
+  }, [tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget, planeTarget]);
 
   // Toast helper
   function showToast(msg, ms = 2200) {
@@ -766,6 +767,7 @@ function App() {
           armedKind={armedKind}
           onArmedConsumed={() => setArmedKind(null)}
           pedTarget={pedTarget}
+          planeTarget={planeTarget}
         />
 
         {/* Title bar overlay */}
@@ -878,6 +880,11 @@ function App() {
                 <button className="stat-btn" onClick={removeVehicleFromRoad} disabled={vehicleCount === 0}>−</button>
                 🚗 {vehicleCount}
                 <button className="stat-btn" onClick={() => addVehicleOnRoad(Math.random() < 0.96 ? 'car' : 'bus')} disabled={!state.streets.length}>+</button>
+              </span>
+              <span className="stat-control" title="Planes flying overhead">
+                <button className="stat-btn" onClick={() => setPlaneTarget(p => Math.max(0, (p ?? 2) - 1))} disabled={(planeTarget ?? 2) <= 0}>−</button>
+                ✈ {planeTarget ?? 2}
+                <button className="stat-btn" onClick={() => setPlaneTarget(p => Math.min(20, (p ?? 2) + 1))} disabled={(planeTarget ?? 2) >= 20}>+</button>
               </span>
             </div>
           );

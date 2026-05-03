@@ -543,7 +543,10 @@ function stepVehicles(motion, vehicles, streets, busStops, lightInfo, occupancy,
           const ahead = m.dir > 0 ? l.tInt > m.t : l.tInt < m.t;
           if (!ahead) continue;
           const dist = Math.abs(l.tInt - m.t) * len;
-          if (dist < 6 || dist > 28) continue;
+          // Stop zone pushed outward so cars halt clearly BEFORE the
+          // traffic light box (which sits ~28 px past the intersection
+          // center along the road).
+          if (dist < 14 || dist > 40) continue;
           const greenForMe = l.isStreetA ? lightInfo.phase === 0 : lightInfo.phase === 1;
           if (!greenForMe) {
             m.pauseUntil = now + 220; // re-check ~5x/sec
@@ -1137,27 +1140,113 @@ function TLBox({ x, y, green, angle }) {
     </g>
   );
 }
-// Two lights per right-angle intersection, each oriented along its road and
-// placed perpendicular to that road so it sits off the asphalt. Light A is
-// on the perpA-positive side; Light B on the perpB-positive side — those are
-// distinct quadrants for any right-angle pair, so they never overlap.
+// Each light is placed ALONG its road (just past the intersection) and
+// oriented along that road, so both visual cues point at the same road.
+// Adds a small perpendicular offset to keep the box clear of the asphalt.
 function TrafficLight({ ix, iy, sA, sB, phase }) {
   const dxA = sA.x2 - sA.x1, dyA = sA.y2 - sA.y1;
   const lenA = Math.hypot(dxA, dyA) || 1;
   const dxB = sB.x2 - sB.x1, dyB = sB.y2 - sB.y1;
   const lenB = Math.hypot(dxB, dyB) || 1;
-  // Perpendicular (CCW in screen coords): (x,y) -> (y, -x).
-  const pAx =  dyA / lenA, pAy = -dxA / lenA;
-  const pBx =  dyB / lenB, pBy = -dxB / lenB;
-  const R = 24;
+  const ax = dxA / lenA, ay = dyA / lenA;       // unit along A
+  const bx = dxB / lenB, by = dyB / lenB;       // unit along B
+  const pAx = ay, pAy = -ax;                    // perpendicular to A (CCW)
+  const pBx = by, pBy = -bx;                    // perpendicular to B (CCW)
+  const R = 28;          // distance along the road past intersection center
+  const OFF = 14;        // perpendicular lift so box doesn't sit on asphalt
   const angleA = Math.atan2(dyA, dxA) * 180 / Math.PI;
   const angleB = Math.atan2(dyB, dxB) * 180 / Math.PI;
   return (
     <g pointerEvents="none">
-      <TLBox x={ix + pAx * R} y={iy + pAy * R} green={phase === 0} angle={angleA}/>
-      <TLBox x={ix + pBx * R} y={iy + pBy * R} green={phase === 1} angle={angleB}/>
+      {/* Light A — along road A, lifted perpendicularly */}
+      <TLBox
+        x={ix + ax * R + pAx * OFF}
+        y={iy + ay * R + pAy * OFF}
+        green={phase === 0} angle={angleA}/>
+      {/* Light B — along road B, opposite-side perpendicular lift so the
+          two lights sit in distinct quadrants */}
+      <TLBox
+        x={ix + bx * R - pBx * OFF}
+        y={iy + by * R - pBy * OFF}
+        green={phase === 1} angle={angleB}/>
     </g>
   );
+}
+
+// ============ PLANES ============
+// Top-down airplane shapes. variant chooses size + color so the sky shows
+// a mix of small props, jets, and large airliners.
+const PLANE_BODY_COLORS = ['#fff', '#bfdbfe', '#f8d4e0', '#cbe6a8', '#f4d35e', '#a8d8e8'];
+function planeSvg(variant) {
+  const c = PLANE_BODY_COLORS[variant % PLANE_BODY_COLORS.length];
+  const size = (variant >> 2) % 3; // 0 small, 1 medium, 2 large
+  if (size === 2) {
+    // Airliner — long body, swept wings
+    return `
+      <ellipse cx="2" cy="3" rx="14" ry="3" fill="rgba(0,0,0,0.18)"/>
+      <rect x="-2" y="-16" width="4" height="28" rx="2" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="0,-19 -2,-16 2,-16" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="-14,2 -2,-3 -2,3 -14,5" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="14,2 2,-3 2,3 14,5" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="-6,11 -2,9 -2,13 -6,14" fill="${c}" stroke="#2a2418" stroke-width="0.6"/>
+      <polygon points="6,11 2,9 2,13 6,14" fill="${c}" stroke="#2a2418" stroke-width="0.6"/>
+      <ellipse cx="0" cy="-12" rx="1.2" ry="1.6" fill="#a8d8e8" stroke="#2a2418" stroke-width="0.4"/>
+    `;
+  }
+  if (size === 1) {
+    // Mid-size jet
+    return `
+      <ellipse cx="2" cy="3" rx="11" ry="3" fill="rgba(0,0,0,0.16)"/>
+      <rect x="-1.5" y="-12" width="3" height="22" rx="1.5" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="0,-14 -1.5,-12 1.5,-12" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="-11,0 -2,-3 -2,3 -11,4" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="11,0 2,-3 2,3 11,4" fill="${c}" stroke="#2a2418" stroke-width="0.7"/>
+      <polygon points="-5,9 -2,7 -2,11 -5,12" fill="${c}" stroke="#2a2418" stroke-width="0.6"/>
+      <polygon points="5,9 2,7 2,11 5,12" fill="${c}" stroke="#2a2418" stroke-width="0.6"/>
+      <ellipse cx="0" cy="-8" rx="1" ry="1.4" fill="#a8d8e8" stroke="#2a2418" stroke-width="0.4"/>
+    `;
+  }
+  // Small prop plane
+  return `
+    <ellipse cx="1" cy="3" rx="8" ry="2.5" fill="rgba(0,0,0,0.14)"/>
+    <rect x="-1.2" y="-9" width="2.4" height="17" rx="1.2" fill="${c}" stroke="#2a2418" stroke-width="0.6"/>
+    <polygon points="0,-11 -1.2,-9 1.2,-9" fill="${c}" stroke="#2a2418" stroke-width="0.6"/>
+    <rect x="-8" y="-2" width="16" height="3" rx="1" fill="${c}" stroke="#2a2418" stroke-width="0.6"/>
+    <rect x="-4" y="6" width="8" height="2" rx="0.6" fill="${c}" stroke="#2a2418" stroke-width="0.5"/>
+    <line x1="-3" y1="-11" x2="3" y2="-11" stroke="#2a2418" stroke-width="1.4"/>
+    <ellipse cx="0" cy="-5" rx="0.8" ry="1.2" fill="#a8d8e8" stroke="#2a2418" stroke-width="0.4"/>
+  `;
+}
+const PlaneVisual = React.memo(function PlaneVisual({ variant }) {
+  return <g dangerouslySetInnerHTML={{ __html: planeSvg(variant || 0) }}/>;
+});
+
+function stepPlanes(planes, target, dt, now, W, H) {
+  const T = Math.max(0, Math.min(20, target != null ? target : 3));
+  if (T === 0) { planes.length = 0; return; }
+  // Spawn — start at one map edge, head to the opposite-ish edge.
+  while (planes.length < T) {
+    const edge = Math.floor(Math.random() * 4);
+    let fromX, fromY, toX, toY;
+    const PAD = 80;
+    if (edge === 0)      { fromX = Math.random() * W; fromY = -PAD; toX = Math.random() * W; toY = H + PAD; }
+    else if (edge === 1) { fromX = W + PAD; fromY = Math.random() * H; toX = -PAD;  toY = Math.random() * H; }
+    else if (edge === 2) { fromX = Math.random() * W; fromY = H + PAD; toX = Math.random() * W; toY = -PAD; }
+    else                 { fromX = -PAD;  fromY = Math.random() * H; toX = W + PAD; toY = Math.random() * H; }
+    planes.push({
+      id: `pl-${now.toFixed(0)}-${planes.length}-${Math.random().toString(36).slice(2,5)}`,
+      fromX, fromY, toX, toY, t: 0,
+      speed: 50 + Math.random() * 70,
+      variant: Math.floor(Math.random() * (PLANE_BODY_COLORS.length * 3)),
+    });
+  }
+  if (planes.length > T) planes.length = T;
+  for (let i = planes.length - 1; i >= 0; i--) {
+    const p = planes[i];
+    const dist = Math.hypot(p.toX - p.fromX, p.toY - p.fromY) || 1;
+    p.t += (p.speed * dt) / dist;
+    if (p.t >= 1) planes.splice(i, 1);
+  }
 }
 
 // ============ DIRECTED CARS (click-to-dispatch) ============
@@ -1224,18 +1313,19 @@ function stepDirectedCars(cars, streets, occupancy, dt, now, onArrived) {
   }
 }
 
-function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, lightInfo, trafficLights, soundOn, dispatches, onDispatchDone, allBuildings, pedTarget }) {
+function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, lightInfo, trafficLights, soundOn, dispatches, onDispatchDone, allBuildings, pedTarget, planeTarget }) {
   const motionRef = useRef(new Map());
   const pedRef = useRef([]);
   const fireTrucksRef = useRef([]);
   const policeCarsRef = useRef([]);
   const directedRef = useRef([]);
+  const planesRef = useRef([]);
   const seenDispatchIdsRef = useRef(new Set());
   const fireCooldownRef = useRef(45);   // first fire dispatch after 45s
   const policeCooldownRef = useRef(35); // first police patrol after 35s
   // Keep latest props accessible from the RAF loop without re-subscribing.
   const propsRef = useRef({});
-  propsRef.current = { vehicles, streets, busStops, fireDepts, policeStations, lightInfo, soundOn, dispatches, onDispatchDone, allBuildings, pedTarget };
+  propsRef.current = { vehicles, streets, busStops, fireDepts, policeStations, lightInfo, soundOn, dispatches, onDispatchDone, allBuildings, pedTarget, planeTarget };
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -1288,6 +1378,7 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
       stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, sound, dt, now, FIRE_CFG);
       stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, sound, dt, now, POLICE_CFG);
       stepDirectedCars(directedRef.current, p.streets, occ, dt, now, p.onDispatchDone);
+      stepPlanes(planesRef.current, p.planeTarget, dt, now, 1800, 1100);
       setTick(t => (t + 1) & 0xFFFF);
       raf = requestAnimationFrame(loop);
     };
@@ -1299,6 +1390,7 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
       fireTrucksRef.current = [];
       policeCarsRef.current = [];
       directedRef.current = [];
+      planesRef.current = [];
       seenDispatchIdsRef.current = new Set();
     };
   }, []);
@@ -1391,6 +1483,19 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
       {trafficLights && trafficLights.map((t, i) => (
         <TrafficLight key={`tl-${i}`} ix={t.x} iy={t.y} sA={t.sA} sB={t.sB} phase={phase}/>
       ))}
+      {/* planes — drawn on top of everything (sky) */}
+      {planesRef.current.map(p => {
+        const x = p.fromX + p.t * (p.toX - p.fromX);
+        const y = p.fromY + p.t * (p.toY - p.fromY);
+        // SVG plane shape points "up" (-Y); rotate so its nose follows
+        // the travel direction.
+        const angle = Math.atan2(p.toY - p.fromY, p.toX - p.fromX) * 180 / Math.PI + 90;
+        return (
+          <g key={p.id} transform={`translate(${x},${y}) rotate(${angle})`}>
+            <PlaneVisual variant={p.variant}/>
+          </g>
+        );
+      })}
     </g>
   );
 }
@@ -1424,6 +1529,7 @@ window.CityCanvas = function CityCanvas({
   armedKind,         // touch-friendly tap-to-arm: kind to place on next bg tap
   onArmedConsumed,
   pedTarget,         // requested pedestrian count (null/undefined = default 8)
+  planeTarget,       // requested plane count (null/undefined = 0)
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -2093,6 +2199,7 @@ window.CityCanvas = function CityCanvas({
               onDispatchDone={onDispatchDone}
               allBuildings={state.buildings}
               pedTarget={pedTarget}
+              planeTarget={planeTarget}
             />
           )}
           {/* protractor overlay */}

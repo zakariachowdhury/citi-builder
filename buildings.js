@@ -629,15 +629,39 @@ window.Buildings = (function() {
       <rect x="-2" y="0" width="4" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.5"/>
       <!-- top dome / cap -->
       <ellipse cx="0" cy="-7" rx="5" ry="2.5" fill="#a0492a" stroke="${STROKE}" stroke-width="0.9"/>
-      <!-- rotating blades -->
+      <!-- rotating blades — all four arms equal length (14 px from hub) -->
       <g>
         <animateTransform attributeName="transform" type="rotate"
           from="0 0 -7" to="360 0 -7" dur="5s" repeatCount="indefinite"/>
         <rect x="-1" y="-21" width="2" height="14" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
         <rect x="-1" y="-7"  width="2" height="14" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
-        <rect x="-7" y="-8"  width="14" height="2" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
+        <rect x="-15" y="-8" width="14" height="2" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
+        <rect x="1"   y="-8" width="14" height="2" fill="#fff8e0" stroke="${STROKE}" stroke-width="0.6"/>
         <circle cx="0" cy="-7" r="1.4" fill="${STROKE}"/>
       </g>
+    `;
+  }
+
+  function airport() {
+    return `
+      <!-- runway -->
+      <rect x="-32" y="-3" width="64" height="6" fill="#5a5a5a" stroke="${STROKE}" stroke-width="${SW}" rx="1"/>
+      <line x1="-26" y1="0" x2="-18" y2="0" stroke="#fff8e0" stroke-width="0.9" stroke-dasharray="3 2"/>
+      <line x1="-12" y1="0" x2="-4"  y2="0" stroke="#fff8e0" stroke-width="0.9" stroke-dasharray="3 2"/>
+      <line x1="4"   y1="0" x2="12"  y2="0" stroke="#fff8e0" stroke-width="0.9" stroke-dasharray="3 2"/>
+      <line x1="18"  y1="0" x2="26"  y2="0" stroke="#fff8e0" stroke-width="0.9" stroke-dasharray="3 2"/>
+      <!-- terminal building below runway -->
+      <rect x="-16" y="6" width="32" height="9" fill="#a8a09a" stroke="${STROKE}" stroke-width="${SW}" rx="1"/>
+      <rect x="-14" y="8"  width="3" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.4"/>
+      <rect x="-9"  y="8"  width="3" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.4"/>
+      <rect x="-4"  y="8"  width="3" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.4"/>
+      <rect x="1"   y="8"  width="3" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.4"/>
+      <rect x="6"   y="8"  width="3" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.4"/>
+      <rect x="11"  y="8"  width="3" height="3" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.4"/>
+      <!-- control tower -->
+      <rect x="-3" y="-13" width="6" height="10" fill="#cdb992" stroke="${STROKE}" stroke-width="${SW}"/>
+      <rect x="-4" y="-17" width="8" height="4" fill="#3b6fb5" stroke="${STROKE}" stroke-width="0.8"/>
+      <rect x="-2" y="-16" width="4" height="2" fill="#a8d8e8" stroke="${STROKE}" stroke-width="0.4"/>
     `;
   }
 
@@ -749,6 +773,7 @@ window.Buildings = (function() {
     { kind: 'clockTower', label: 'Clock Tower',   group: 'landmarks', size: 50, draw: clockTower,      stackable: true },
     { kind: 'windmill',   label: 'Windmill',      group: 'landmarks', size: 44, draw: windmill,        stackable: true },
     { kind: 'statue',     label: 'Statue',        group: 'landmarks', size: 30, draw: statue,          stackable: true },
+    { kind: 'airport',    label: 'Airport',       group: 'landmarks', size: 70, draw: airport,         stackable: true },
   ];
 
   const ALL = [...REQUIRED, ...DECOR];
