@@ -733,13 +733,17 @@ function App() {
 
   return (
     <div className="app paper-bg">
-      {/* Mobile sidebar toggle buttons */}
-      <button className="sidebar-toggle left" onClick={() => setLeftOpen(o => !o)} title="Building palette">
-        {leftOpen ? '✕' : '🏗️'}
-      </button>
-      <button className="sidebar-toggle right" onClick={() => setRightOpen(o => !o)} title="Rubric checklist">
-        {rightOpen ? '✕' : '📋'}
-      </button>
+      {/* Mobile sidebar toggle buttons — hidden when their drawer is open */}
+      {!leftOpen && (
+        <button className="sidebar-toggle left" onClick={() => setLeftOpen(true)} title="Building palette">
+          🏗️
+        </button>
+      )}
+      {!rightOpen && (
+        <button className="sidebar-toggle right" onClick={() => setRightOpen(true)} title="Rubric checklist">
+          📋
+        </button>
+      )}
       {/* Backdrop when a sidebar drawer is open */}
       <div className={`sidebar-backdrop ${leftOpen || rightOpen ? 'visible' : ''}`}
            onClick={() => { setLeftOpen(false); setRightOpen(false); }}/>
