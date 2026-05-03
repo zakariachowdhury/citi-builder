@@ -1,4 +1,4 @@
-# Geometry City
+# City Builder
 
 A hand-drawn city builder for learning geometry — draw streets, place
 required buildings on the right kinds of intersections (right-angle,

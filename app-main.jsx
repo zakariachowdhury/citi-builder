@@ -647,7 +647,7 @@ function App() {
         try { data = JSON.parse(ev.target.result); }
         catch { showToast('Could not parse — is that a JSON file?'); return; }
         if (!data || !Array.isArray(data.streets) || !Array.isArray(data.buildings)) {
-          showToast('Not a Geometry City file — missing streets/buildings');
+          showToast('Not a City Builder file — missing streets/buildings');
           return;
         }
         askConfirm({
