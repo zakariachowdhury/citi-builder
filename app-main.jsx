@@ -148,6 +148,7 @@ function App() {
   const [showAngles, setShowAngles] = useStateA(savedPref('showAngles', false));
   const [showProtractor, setShowProtractor] = useStateA(true);
   const [liveMode, setLiveMode] = useStateA(savedPref('liveMode', true));
+  const [vibesOn, setVibesOn] = useStateA(savedPref('vibesOn', true));
   const [soundOn, setSoundOn] = useStateA(savedPref('soundOn', true));
   const [weather, setWeather] = useStateA(savedPref('weather', 'clear'));
   const [selectedId, setSelectedId] = useStateA(null);
@@ -177,10 +178,10 @@ function App() {
   useEffectA(() => {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget, planeTarget,
+        tool, drawStyle, showAngles, liveMode, vibesOn, soundOn, weather, pedTarget, planeTarget,
       }));
     } catch (e) {}
-  }, [tool, drawStyle, showAngles, liveMode, soundOn, weather, pedTarget, planeTarget]);
+  }, [tool, drawStyle, showAngles, liveMode, vibesOn, soundOn, weather, pedTarget, planeTarget]);
 
   // Toast helper
   function showToast(msg, ms = 2200) {
@@ -842,6 +843,7 @@ function App() {
           pedTarget={pedTarget}
           planeTarget={planeTarget}
           confettiBursts={confettiBursts}
+          vibesOn={vibesOn}
         />
 
         {/* Title bar overlay */}
@@ -921,6 +923,11 @@ function App() {
           <button className={`tool-btn ${liveMode ? 'active' : ''}`}
                   onClick={() => setLiveMode(!liveMode)} title="Bring city to life — cars and buses move around">
             🚦
+          </button>
+          <button className={`tool-btn ${vibesOn ? 'active' : ''}`}
+                  onClick={() => setVibesOn(!vibesOn)}
+                  title="Ambient motion — drifting clouds, swaying trees, chimney smoke. Turn off for a static map or to save battery.">
+            🍃
           </button>
           <button className={`tool-btn ${soundOn ? 'active' : ''}`}
                   onClick={() => setSoundOn(!soundOn)} title="Sound effects — sirens on dispatch, ding at bus stops">

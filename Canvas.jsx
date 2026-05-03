@@ -1719,6 +1719,7 @@ window.CityCanvas = function CityCanvas({
   pedTarget,         // requested pedestrian count (null/undefined = default 8)
   planeTarget,       // requested plane count (null/undefined = 0)
   confettiBursts,    // array of {id} bursts to render in viewport space
+  vibesOn = true,    // ambient SMIL motion: clouds, sway, smoke, fountain, windmill
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -1776,6 +1777,17 @@ window.CityCanvas = function CityCanvas({
 
   const [hoverEndpoint, setHoverEndpoint] = useState(null); // {x,y} for snap indicator
   const [angleHud, setAngleHud] = useState(null); // {x,y,tx,ty,deg,snapped}
+
+  // Pause/resume the entire SVG SMIL clock when the vibes toggle flips. This
+  // freezes tree sway, chimney smoke, drifting clouds, the windmill, the
+  // ferris wheel, the fountain, and any in-flight confetti — useful for
+  // exporting/printing or saving battery on slow devices.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !svg.pauseAnimations) return;
+    if (vibesOn) svg.unpauseAnimations();
+    else svg.pauseAnimations();
+  }, [vibesOn]);
 
   // Auto-fit on initial mount and whenever the canvas resizes — keeps the
   // starter pattern nicely centered no matter the viewport.
@@ -2284,7 +2296,7 @@ window.CityCanvas = function CityCanvas({
         <rect x={-W} y={-H} width={W*3} height={H*3} fill="url(#paper-grain)" opacity="0.6"/>
 
         {/* Drifting clouds in viewport space — always glide past, regardless of pan/zoom */}
-        <Clouds w={W} h={H} on={liveMode}/>
+        <Clouds w={W} h={H} on={vibesOn}/>
 
         <g transform={viewTransform}>
           {/* Snap grid (only while drawing or dragging) */}
