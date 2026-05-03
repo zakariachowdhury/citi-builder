@@ -2,20 +2,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Caveat:wght@500;700&family=Gloria+Hallelujah&display=swap');
 
 :root {
-  --paper: #f4ead5;
-  --paper-shade: #e8dcb8;
+  /* Lighter paper + airier panels for a brighter, less heavy feel.
+     Crayon colors nudged a touch toward pastel; ink stays dark so
+     hand-drawn outlines still read clearly. */
+  --paper: #fbf6ea;
+  --paper-shade: #f1e8d2;
   --ink: #2a2418;
-  --ink-soft: #4a3f2c;
-  --crayon-red: #d94c3a;
-  --crayon-blue: #3b6fb5;
-  --crayon-green: #4f8b4a;
-  --crayon-yellow: #e7b94a;
-  --crayon-purple: #8a5fb0;
-  --crayon-orange: #de8348;
-  --crayon-pink: #d97ba0;
-  --crayon-brown: #8a6a4a;
-  --road: #d8d8d8;
-  --road-edge: #9a9a9a;
+  --ink-soft: #5a4d35;
+  --crayon-red: #e16652;
+  --crayon-blue: #5188cc;
+  --crayon-green: #6aa364;
+  --crayon-yellow: #ecca6c;
+  --crayon-purple: #9d75c2;
+  --crayon-orange: #e89764;
+  --crayon-pink: #e191b1;
+  --crayon-brown: #a3825e;
+  --road: #ececec;
+  --road-edge: #b8b8b8;
   --hand: 'Patrick Hand', 'Caveat', cursive;
   --display: 'Gloria Hallelujah', 'Patrick Hand', cursive;
 }
@@ -64,13 +67,13 @@ button { font-family: var(--hand); cursor: pointer; }
 }
 
 .panel {
-  background: rgba(244, 234, 213, 0.85);
+  background: rgba(251, 246, 234, 0.92);
   border: 2px solid var(--ink);
   border-radius: 14px;
   margin: 12px;
   padding: 14px;
   overflow: auto;
-  box-shadow: 3px 3px 0 rgba(42,36,24,0.15);
+  box-shadow: 3px 3px 0 rgba(42,36,24,0.12);
   position: relative;
 }
 .panel::before {

@@ -157,7 +157,7 @@ function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStre
         {streets.map(s => (
           <line key={'b-'+s.id}
             x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-            stroke="#9a9a9a" strokeWidth="36" strokeLinecap="round"
+            stroke="#b8b8b8" strokeWidth="36" strokeLinecap="round"
             pointerEvents="none"/>
         ))}
       </g>
@@ -166,7 +166,7 @@ function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStre
         {streets.map(s => (
           <line key={'f-'+s.id}
             x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-            stroke="#dcdcdc" strokeWidth="30" strokeLinecap="round"
+            stroke="#ececec" strokeWidth="30" strokeLinecap="round"
             pointerEvents="none"/>
         ))}
       </g>
@@ -189,13 +189,19 @@ function RoadNetwork({ streets, intersections, selectedId, multiSelected, onStre
           if (len < 80) return null;
           const ts = breaks.get(s.id) || [];
           const stops = [0, ...ts, 1];
-          let bestStart = 0, bestEnd = 1, bestGap = -1;
+          // Pick the gap whose midpoint is CLOSEST to t = 0.5 (the road's
+          // visual center), not just the longest one. Falls back to the
+          // longest gap if nothing's wide enough at the center.
+          const minGap = 70 / len; // need this much room for the chip
+          let bestStart = 0, bestEnd = 1, bestDist = Infinity;
           for (let i = 0; i < stops.length - 1; i++) {
-            const gap = stops[i + 1] - stops[i];
-            if (gap > bestGap) { bestGap = gap; bestStart = stops[i]; bestEnd = stops[i + 1]; }
+            const a = stops[i], b = stops[i + 1];
+            if (b - a < minGap) continue;
+            const mid = (a + b) / 2;
+            const dist = Math.abs(mid - 0.5);
+            if (dist < bestDist) { bestDist = dist; bestStart = a; bestEnd = b; }
           }
-          const gapLen = bestGap * len;
-          if (gapLen < 70) return null; // not enough room for the chip
+          if (bestDist === Infinity) return null;
           const midT = (bestStart + bestEnd) / 2;
           const midX = s.x1 + midT * (s.x2 - s.x1);
           const midY = s.y1 + midT * (s.y2 - s.y1);

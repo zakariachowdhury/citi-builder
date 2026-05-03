@@ -179,14 +179,15 @@ window.Patterns = (function() {
       return true;
     }
     function tryPlaceInCell(cell, kind, half, padding, spacing, label) {
+      // Slot positions are exact grid points. We shuffle the visit order
+      // so different runs fill different slots, but each placed building
+      // sits precisely at a grid point (no jitter) for a tidy, aligned
+      // look across the cell.
       const slots = makeSlots(cell, padding, spacing).sort(() => 0.5 - rng());
       for (const slot of slots) {
-        // small jitter for an organic-but-aligned look
-        const jx = slot.x + (rng() - 0.5) * 6;
-        const jy = slot.y + (rng() - 0.5) * 6;
-        if (fits(jx, jy, half)) {
-          placed.push({ x: jx, y: jy, half });
-          return { x: jx, y: jy };
+        if (fits(slot.x, slot.y, half)) {
+          placed.push({ x: slot.x, y: slot.y, half });
+          return { x: slot.x, y: slot.y };
         }
       }
       return null;
