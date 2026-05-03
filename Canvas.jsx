@@ -34,6 +34,41 @@ function PaperDefs() {
   );
 }
 
+// ============ CLOUDS ============
+// Soft hand-drawn clouds drift across the canvas in viewport space, so they
+// always glide past regardless of pan/zoom. Pure SVG <animateTransform>.
+function Clouds({ w, h, on }) {
+  const clouds = useMemo(() => {
+    if (!on) return [];
+    return Array.from({ length: 6 }, (_, i) => ({
+      y: 50 + (i * 73 + 23) % Math.max(1, Math.floor(h * 0.55)),
+      scale: 0.7 + ((i * 17) % 9) / 12,
+      dur: 70 + (i * 11) % 50,
+      delay: -((i * 13) % 70),
+      opacity: 0.18 + ((i * 7) % 12) / 80,
+    }));
+  }, [w, h, on]);
+  if (!on) return null;
+  return (
+    <g pointerEvents="none">
+      {clouds.map((c, i) => (
+        <g key={i} opacity={c.opacity}>
+          <animateTransform attributeName="transform" type="translate"
+            from={`-280 ${c.y}`} to={`${w + 280} ${c.y}`}
+            dur={`${c.dur}s`} begin={`${c.delay}s`} repeatCount="indefinite"/>
+          <g transform={`scale(${c.scale})`}>
+            <ellipse cx="0"   cy="0"   rx="46" ry="16" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+            <ellipse cx="-28" cy="-6"  rx="22" ry="14" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+            <ellipse cx="22"  cy="-4"  rx="26" ry="16" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+            <ellipse cx="-8"  cy="-13" rx="20" ry="12" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+            <ellipse cx="14"  cy="-12" rx="16" ry="10" fill="#ffffff" stroke="#cdc4b0" strokeWidth="1.2"/>
+          </g>
+        </g>
+      ))}
+    </g>
+  );
+}
+
 // ============ WEATHER ============
 // Renders falling rain or snow over the entire canvas. Pure SVG <animate>
 // — declarative, no JS per frame.
@@ -2153,6 +2188,9 @@ window.CityCanvas = function CityCanvas({
         <PaperDefs/>
         <rect x="0" y="0" width={W} height={H} fill="url(#grass)"/>
         <rect x="0" y="0" width={W} height={H} fill="url(#paper-grain)" opacity="0.6"/>
+
+        {/* Drifting clouds in viewport space — always glide past, regardless of pan/zoom */}
+        <Clouds w={W} h={H} on={liveMode}/>
 
         <g transform={viewTransform}>
           {/* Snap grid (only while drawing or dragging) */}

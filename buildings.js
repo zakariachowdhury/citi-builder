@@ -173,9 +173,28 @@ window.Buildings = (function() {
     const roofs = ['#7a4530', '#8a5230', '#5a3520', '#9a6240'];
     const fc = colors[variant % colors.length];
     const rc = roofs[variant % roofs.length];
+    // Chimney smoke — staggered puffs rise and fade. Skip ~30% of homes
+    // (variants where v%3===2) so the neighborhood doesn't all smoke at once.
+    const dur = (3.4 + (variant * 0.41) % 1.6).toFixed(2);
+    const showSmoke = (variant % 3) !== 2;
+    const puff = (delay) => `
+      <circle r="1.6" fill="#cdc4b8">
+        <animate attributeName="cy" from="-12" to="-30" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/>
+        <animate attributeName="cx" values="6.5; 8; 5.5; 7" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/>
+        <animate attributeName="r"  values="1.4; 2.4; 3.2" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0; 0.55; 0" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/>
+      </circle>`;
+    const smoke = showSmoke ? `
+      <rect x="5" y="-13" width="3" height="5" fill="${rc}" stroke="${STROKE}" stroke-width="1"/>
+      <g pointer-events="none">
+        ${puff(0)}
+        ${puff(-(dur / 3).toFixed(2))}
+        ${puff(-(dur * 2 / 3).toFixed(2))}
+      </g>` : '';
     return `
       <rect x="-14" y="-6" width="28" height="20" fill="${fc}" stroke="${STROKE}" stroke-width="${SW}" rx="1"/>
       <polygon points="-16,-6 0,-18 16,-6" fill="${rc}" stroke="${STROKE}" stroke-width="${SW}"/>
+      ${smoke}
       <rect x="-3" y="2" width="6" height="12" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
       <rect x="-11" y="-2" width="5" height="5" fill="#fff8e0" stroke="${STROKE}" stroke-width="1"/>
       <rect x="6" y="-2" width="5" height="5" fill="#fff8e0" stroke="${STROKE}" stroke-width="1"/>
@@ -185,36 +204,51 @@ window.Buildings = (function() {
   // Decorations
   function tree(variant = 0) {
     const v = variant % 4;
+    // Per-tree sway period (3.0 - 4.5s) and phase offset so a forest doesn't
+    // pulse in unison. The animateTransform pivots foliage around the trunk top.
+    const dur = (3.0 + (variant * 0.31) % 1.5).toFixed(2);
+    const begin = (-(variant * 0.27) % 2).toFixed(2);
+    const sway = (pivotY) => `<animateTransform attributeName="transform" type="rotate"
+      values="-2.5 0 ${pivotY}; 2.5 0 ${pivotY}; -2.5 0 ${pivotY}"
+      dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/>`;
     if (v === 1) {
-      // Triangular pine
+      // Triangular pine — rotate around trunk top (y=8)
       return `
-        <polygon points="0,-14 -8,-2 -2,-2 -8,4 -2,4 -2,8 2,8 2,4 8,4 2,-2 8,-2"
-          fill="#3a6b3f" stroke="${STROKE}" stroke-width="${SW}"/>
         <rect x="-1.5" y="8" width="3" height="5" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
+        <g>${sway(8)}
+          <polygon points="0,-14 -8,-2 -2,-2 -8,4 -2,4 -2,8 2,8 2,4 8,4 2,-2 8,-2"
+            fill="#3a6b3f" stroke="${STROKE}" stroke-width="${SW}"/>
+        </g>
       `;
     }
     if (v === 2) {
       // Bushy multi-puff
       return `
-        <circle cx="0"  cy="-2" r="9"  fill="#5fa050" stroke="${STROKE}" stroke-width="${SW}"/>
-        <circle cx="-5" cy="-7" r="5"  fill="#7ab26e" stroke="${STROKE}" stroke-width="1.2"/>
-        <circle cx="5"  cy="-6" r="4.5" fill="#7ab26e" stroke="${STROKE}" stroke-width="1.2"/>
         <rect x="-1.5" y="6" width="3" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
+        <g>${sway(6)}
+          <circle cx="0"  cy="-2" r="9"  fill="#5fa050" stroke="${STROKE}" stroke-width="${SW}"/>
+          <circle cx="-5" cy="-7" r="5"  fill="#7ab26e" stroke="${STROKE}" stroke-width="1.2"/>
+          <circle cx="5"  cy="-6" r="4.5" fill="#7ab26e" stroke="${STROKE}" stroke-width="1.2"/>
+        </g>
       `;
     }
     if (v === 3) {
       // Slim oval
       return `
-        <ellipse cx="0" cy="-3" rx="6" ry="11" fill="#4f8b4a" stroke="${STROKE}" stroke-width="${SW}"/>
-        <ellipse cx="-2" cy="-7" rx="3" ry="4" fill="#6ba85f" stroke="${STROKE}" stroke-width="1"/>
         <rect x="-1.5" y="7" width="3" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
+        <g>${sway(7)}
+          <ellipse cx="0" cy="-3" rx="6" ry="11" fill="#4f8b4a" stroke="${STROKE}" stroke-width="${SW}"/>
+          <ellipse cx="-2" cy="-7" rx="3" ry="4" fill="#6ba85f" stroke="${STROKE}" stroke-width="1"/>
+        </g>
       `;
     }
     // 0: original round bushy
     return `
-      <circle cx="0"  cy="-2" r="10" fill="#4f8b4a" stroke="${STROKE}" stroke-width="${SW}"/>
-      <circle cx="-4" cy="-6" r="5"  fill="#6ba85f" stroke="${STROKE}" stroke-width="1.2"/>
       <rect x="-1.5" y="6" width="3" height="6" fill="#7a5230" stroke="${STROKE}" stroke-width="1.2"/>
+      <g>${sway(6)}
+        <circle cx="0"  cy="-2" r="10" fill="#4f8b4a" stroke="${STROKE}" stroke-width="${SW}"/>
+        <circle cx="-4" cy="-6" r="5"  fill="#6ba85f" stroke="${STROKE}" stroke-width="1.2"/>
+      </g>
     `;
   }
   function flower(variant = 0) {
@@ -227,14 +261,22 @@ window.Buildings = (function() {
       { center: '#de8348', petal: '#f4d35e' }, // orange + yellow
     ];
     const p = palettes[variant % palettes.length];
+    // Gentle wobble around the stem base (0, 6) — like a breeze.
+    const dur = (2.2 + (variant * 0.23) % 1.2).toFixed(2);
+    const begin = (-(variant * 0.19) % 1.5).toFixed(2);
     return `
-      <circle cx="-4" cy="-5" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="4"  cy="-5" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="-4" cy="-1" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="4"  cy="-1" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
-      <circle cx="0"  cy="-3" r="3"   fill="${p.center}" stroke="${STROKE}" stroke-width="1.2"/>
-      <circle cx="0"  cy="-3" r="1.4" fill="#fff8e0"/>
       <line x1="0" y1="-1" x2="0" y2="6" stroke="#4f8b4a" stroke-width="1.5"/>
+      <g>
+        <animateTransform attributeName="transform" type="rotate"
+          values="-4 0 6; 4 0 6; -4 0 6"
+          dur="${dur}s" begin="${begin}s" repeatCount="indefinite"/>
+        <circle cx="-4" cy="-5" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="4"  cy="-5" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="-4" cy="-1" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="4"  cy="-1" r="2.5" fill="${p.petal}" stroke="${STROKE}" stroke-width="0.8"/>
+        <circle cx="0"  cy="-3" r="3"   fill="${p.center}" stroke="${STROKE}" stroke-width="1.2"/>
+        <circle cx="0"  cy="-3" r="1.4" fill="#fff8e0"/>
+      </g>
     `;
   }
   function car(variant = 0) {
