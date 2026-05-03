@@ -1227,31 +1227,84 @@ const PlaneVisual = React.memo(function PlaneVisual({ variant }) {
   return <g dangerouslySetInnerHTML={{ __html: planeSvg(variant || 0) }}/>;
 });
 
-function stepPlanes(planes, target, dt, now, W, H) {
+function randomEdgePoint(W, H, PAD = 80) {
+  const edge = Math.floor(Math.random() * 4);
+  if (edge === 0) return { x: Math.random() * W, y: -PAD };
+  if (edge === 1) return { x: W + PAD, y: Math.random() * H };
+  if (edge === 2) return { x: Math.random() * W, y: H + PAD };
+  return { x: -PAD, y: Math.random() * H };
+}
+function spawnFlybyPlane(now, W, H) {
+  const a = randomEdgePoint(W, H);
+  const b = randomEdgePoint(W, H);
+  return {
+    id: `pl-${now.toFixed(0)}-${Math.random().toString(36).slice(2,5)}`,
+    purpose: 'flyby',
+    fromX: a.x, fromY: a.y, toX: b.x, toY: b.y, t: 0,
+    speed: 50 + Math.random() * 70,
+    variant: Math.floor(Math.random() * (PLANE_BODY_COLORS.length * 3)),
+    lastAngle: 0,
+  };
+}
+function spawnAirportPlane(airports, now, W, H) {
+  if (!airports.length) return null;
+  const a = airports[Math.floor(Math.random() * airports.length)];
+  const start = randomEdgePoint(W, H);
+  return {
+    id: `pl-${now.toFixed(0)}-${Math.random().toString(36).slice(2,5)}`,
+    purpose: 'airport',
+    stage: 0,           // 0 = approach, 1 = on runway, 2 = depart
+    airportX: a.x, airportY: a.y,
+    fromX: start.x, fromY: start.y, toX: a.x, toY: a.y, t: 0,
+    speed: 70 + Math.random() * 40,
+    variant: Math.floor(Math.random() * (PLANE_BODY_COLORS.length * 3)),
+    pauseUntil: 0,
+    lastAngle: 0,
+  };
+}
+function stepPlanes(planes, target, airports, dt, now, W, H) {
   const T = Math.max(0, Math.min(20, target != null ? target : 3));
   if (T === 0) { planes.length = 0; return; }
-  // Spawn — start at one map edge, head to the opposite-ish edge.
-  while (planes.length < T) {
-    const edge = Math.floor(Math.random() * 4);
-    let fromX, fromY, toX, toY;
-    const PAD = 80;
-    if (edge === 0)      { fromX = Math.random() * W; fromY = -PAD; toX = Math.random() * W; toY = H + PAD; }
-    else if (edge === 1) { fromX = W + PAD; fromY = Math.random() * H; toX = -PAD;  toY = Math.random() * H; }
-    else if (edge === 2) { fromX = Math.random() * W; fromY = H + PAD; toX = Math.random() * W; toY = -PAD; }
-    else                 { fromX = -PAD;  fromY = Math.random() * H; toX = W + PAD; toY = Math.random() * H; }
-    planes.push({
-      id: `pl-${now.toFixed(0)}-${planes.length}-${Math.random().toString(36).slice(2,5)}`,
-      fromX, fromY, toX, toY, t: 0,
-      speed: 50 + Math.random() * 70,
-      variant: Math.floor(Math.random() * (PLANE_BODY_COLORS.length * 3)),
-    });
+
+  // If there's at least one airport in the city, keep one airport-bound
+  // plane in the rotation at all times (lands → pauses → takes off).
+  if (airports.length > 0 && !planes.some(p => p.purpose === 'airport')) {
+    const ap = spawnAirportPlane(airports, now, W, H);
+    if (ap) planes.push(ap);
   }
+  // Fill remaining slots with regular flyby planes.
+  while (planes.length < T) planes.push(spawnFlybyPlane(now, W, H));
   if (planes.length > T) planes.length = T;
+
   for (let i = planes.length - 1; i >= 0; i--) {
     const p = planes[i];
-    const dist = Math.hypot(p.toX - p.fromX, p.toY - p.fromY) || 1;
+    if (p.pauseUntil > now) continue;
+    const dx = p.toX - p.fromX, dy = p.toY - p.fromY;
+    const dist = Math.hypot(dx, dy) || 1;
+    if (dist > 0.5) p.lastAngle = Math.atan2(dy, dx) * 180 / Math.PI + 90;
     p.t += (p.speed * dt) / dist;
-    if (p.t >= 1) planes.splice(i, 1);
+    if (p.t < 1) continue;
+
+    if (p.purpose !== 'airport') { planes.splice(i, 1); continue; }
+    if (p.stage === 0) {
+      // Just landed — stop on the runway and rest.
+      p.stage = 1;
+      p.fromX = p.airportX; p.fromY = p.airportY;
+      p.toX = p.airportX; p.toY = p.airportY;
+      p.t = 0;
+      p.pauseUntil = now + 4000 + Math.random() * 3000;
+    } else if (p.stage === 1) {
+      // Pause done — take off toward a random map edge.
+      const exit = randomEdgePoint(W, H);
+      p.fromX = p.airportX; p.fromY = p.airportY;
+      p.toX = exit.x; p.toY = exit.y;
+      p.t = 0;
+      p.stage = 2;
+      p.speed = 80 + Math.random() * 50;
+    } else {
+      // Departed off-map.
+      planes.splice(i, 1);
+    }
   }
 }
 
@@ -1384,7 +1437,8 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
       stepDispatchedFleet(fireTrucksRef.current, fireCooldownRef, p.fireDepts, p.streets, occ, sound, dt, now, FIRE_CFG);
       stepDispatchedFleet(policeCarsRef.current, policeCooldownRef, p.policeStations, p.streets, occ, sound, dt, now, POLICE_CFG);
       stepDirectedCars(directedRef.current, p.streets, occ, dt, now, p.onDispatchDone);
-      stepPlanes(planesRef.current, p.planeTarget, dt, now, 1800, 1100);
+      const airportsList = (p.allBuildings || []).filter(b => b.kind === 'airport');
+      stepPlanes(planesRef.current, p.planeTarget, airportsList, dt, now, 1800, 1100);
       setTick(t => (t + 1) & 0xFFFF);
       raf = requestAnimationFrame(loop);
     };
@@ -1493,9 +1547,12 @@ function CityLife({ vehicles, streets, busStops, fireDepts, policeStations, ligh
       {planesRef.current.map(p => {
         const x = p.fromX + p.t * (p.toX - p.fromX);
         const y = p.fromY + p.t * (p.toY - p.fromY);
-        // SVG plane shape points "up" (-Y); rotate so its nose follows
-        // the travel direction.
-        const angle = Math.atan2(p.toY - p.fromY, p.toX - p.fromX) * 180 / Math.PI + 90;
+        // Use lastAngle so a parked airport plane keeps its approach
+        // orientation instead of snapping to 0° while stationary.
+        const dx = p.toX - p.fromX, dy = p.toY - p.fromY;
+        const angle = Math.hypot(dx, dy) > 0.5
+          ? Math.atan2(dy, dx) * 180 / Math.PI + 90
+          : (p.lastAngle ?? 0);
         return (
           <g key={p.id} transform={`translate(${x},${y}) rotate(${angle})`}>
             <PlaneVisual variant={p.variant}/>
