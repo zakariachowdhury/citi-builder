@@ -160,6 +160,8 @@ function App() {
   const [projectsOpen, setProjectsOpen] = useStateA(false);
   const [dispatches, setDispatches] = useStateA([]);
   const [armedKind, setArmedKind] = useStateA(null); // touch-friendly tap-to-place
+  const [leftOpen, setLeftOpen] = useStateA(false);
+  const [rightOpen, setRightOpen] = useStateA(false);
   const [pedTarget, setPedTarget] = useStateA(savedPref('pedTarget', 8));
   const [planeTarget, setPlaneTarget] = useStateA(savedPref('planeTarget', 2));
   const undoStack = useRefA([]);
@@ -731,6 +733,17 @@ function App() {
 
   return (
     <div className="app paper-bg">
+      {/* Mobile sidebar toggle buttons */}
+      <button className="sidebar-toggle left" onClick={() => setLeftOpen(o => !o)} title="Building palette">
+        {leftOpen ? '✕' : '🏗️'}
+      </button>
+      <button className="sidebar-toggle right" onClick={() => setRightOpen(o => !o)} title="Rubric checklist">
+        {rightOpen ? '✕' : '📋'}
+      </button>
+      {/* Backdrop when a sidebar drawer is open */}
+      <div className={`sidebar-backdrop ${leftOpen || rightOpen ? 'visible' : ''}`}
+           onClick={() => { setLeftOpen(false); setRightOpen(false); }}/>
+
       <PaletteSidebar
         state={state}
         onPickPattern={pickPattern}
@@ -738,6 +751,8 @@ function App() {
         onClearAll={clearAll}
         armedKind={armedKind}
         onArmKind={(kind) => setArmedKind(prev => prev === kind ? null : kind)}
+        open={leftOpen}
+        onClose={() => setLeftOpen(false)}
       />
 
       <div className="center-col">
@@ -941,7 +956,7 @@ function App() {
         {toast && <div className="toast">{toast}</div>}
       </div>
 
-      <RubricSidebar rubric={rubric}/>
+      <RubricSidebar rubric={rubric} open={rightOpen} onClose={() => setRightOpen(false)}/>
 
       {confirmDialog && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) confirmDialog.onCancel(); }}>

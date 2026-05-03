@@ -23,7 +23,7 @@ function PaletteItem({ b, placed, armed, onPaletteDragStart, onArmKind }) {
   );
 }
 
-window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onPickPattern, onPickFinalProject, onClearAll, armedKind, onArmKind }) {
+window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onPickPattern, onPickFinalProject, onClearAll, armedKind, onArmKind, open, onClose }) {
   const placedKinds = new Set(state.buildings.map(b => b.kind));
 
   // Bucket every building (required + decor) by its `group` field so we can
@@ -37,7 +37,8 @@ window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onP
   }
 
   return (
-    <div className="panel" style={{ gridColumn: 1, gridRow: 1 }}>
+    <div className={`panel left-panel ${open ? 'open' : ''}`} style={{ gridColumn: 1, gridRow: 1 }}>
+      <button className="sidebar-close" onClick={onClose} title="Close panel">✕</button>
       <h2>🏗️ City Builder</h2>
       <div className="brand-sub">Drag onto the map · or tap to arm, then tap →</div>
 
@@ -100,7 +101,7 @@ window.PaletteSidebar = function PaletteSidebar({ state, onPaletteDragStart, onP
   );
 };
 
-window.RubricSidebar = function RubricSidebar({ rubric, total, done }) {
+window.RubricSidebar = function RubricSidebar({ rubric, total, done, open, onClose }) {
   const items = [
     { key: 'streets-named',  label: 'All streets named', done: rubric.streetsNamed,
       sub: `${rubric.namedStreetCount}/${rubric.streetCount} named` },
@@ -133,7 +134,8 @@ window.RubricSidebar = function RubricSidebar({ rubric, total, done }) {
   const pct = (completed / items.length) * 100;
 
   return (
-    <div className="panel" style={{ gridColumn: 3, gridRow: 1 }}>
+    <div className={`panel right-panel ${open ? 'open' : ''}`} style={{ gridColumn: 3, gridRow: 1 }}>
+      <button className="sidebar-close" onClick={onClose} title="Close panel">✕</button>
       <h2>📋 Rubric Checklist</h2>
       <div className="brand-sub">Auto-checks as you build</div>
 

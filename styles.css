@@ -663,6 +663,157 @@ svg.city-svg { display: block; }
 }
 .panel::-webkit-scrollbar-track { background: transparent; }
 
+/* ============ SIDEBAR TOGGLE (mobile) ============ */
+.sidebar-toggle {
+  display: none; /* hidden on desktop */
+  position: fixed;
+  z-index: 60;
+  width: 40px; height: 40px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  border-radius: 50%;
+  box-shadow: 2px 2px 0 rgba(42,36,24,0.2);
+  font-size: 18px;
+  cursor: pointer;
+  align-items: center; justify-content: center;
+  font-family: var(--hand);
+  padding: 0;
+  line-height: 1;
+}
+.sidebar-toggle:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 rgba(42,36,24,0.2); }
+.sidebar-toggle.left  { top: 12px; left: 12px; }
+.sidebar-toggle.right { top: 12px; right: 12px; }
+
+.sidebar-close {
+  display: none; /* hidden on desktop */
+  position: absolute; top: 8px; right: 8px; z-index: 5;
+  width: 30px; height: 30px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  align-items: center; justify-content: center;
+  font-family: var(--hand);
+  padding: 0; line-height: 1;
+}
+.sidebar-close:hover { background: rgba(42,36,24,0.08); }
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed; inset: 0; z-index: 39;
+  background: rgba(42,36,24,0.35);
+  animation: modalFadeIn 140ms ease-out;
+}
+
+/* ============ RESPONSIVE — MOBILE ============ */
+@media (max-width: 860px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-toggle { display: flex; }
+  .sidebar-close  { display: flex; }
+  .sidebar-backdrop.visible { display: block; }
+
+  /* Sidebars become slide-over drawers */
+  .panel.left-panel,
+  .panel.right-panel {
+    position: fixed;
+    top: 0; bottom: 0;
+    width: 280px;
+    max-width: 85vw;
+    z-index: 40;
+    margin: 0;
+    border-radius: 0;
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .panel.left-panel  { left: 0;  transform: translateX(-100%); }
+  .panel.right-panel { right: 0; transform: translateX(100%); }
+  .panel.left-panel.open  { transform: translateX(0); }
+  .panel.right-panel.open { transform: translateX(0); }
+  .panel.left-panel::before,
+  .panel.right-panel::before { display: none; }
+
+  .app > .center-col {
+    grid-column: 1;
+  }
+
+  /* Title bar — shrink for mobile, leave room for toggle buttons */
+  .title-bar {
+    left: 58px;
+    max-width: calc(100% - 120px);
+    padding: 3px 8px;
+  }
+  .title-bar input.city { width: 90px; font-size: 14px; }
+  .title-bar .pop { font-size: 14px; }
+  .title-bar .pop-num-derived { font-size: 14px; }
+
+  /* Stats chip — scroll horizontally, smaller */
+  .stats-chip {
+    top: 56px;
+    gap: 8px;
+    font-size: 12px;
+    padding: 4px 10px;
+    max-width: calc(100% - 28px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Toolbar — horizontal row below title */
+  .toolbar {
+    top: auto;
+    bottom: 110px;
+    right: 8px;
+    gap: 4px;
+  }
+  .tool-btn { width: 30px; height: 30px; font-size: 12px; }
+
+  /* Zoom bar */
+  .zoom-bar {
+    bottom: 70px;
+    right: 8px;
+    gap: 4px;
+  }
+
+  /* Bottom bar — wrap, smaller buttons */
+  .bottom-bar {
+    bottom: 8px;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: calc(100% - 16px);
+  }
+  .bottom-bar .tool-btn {
+    font-size: 11px;
+    padding: 0 8px !important;
+    height: 28px;
+  }
+
+  /* Draw style bar */
+  .draw-style-bar {
+    bottom: 60px;
+    left: 8px;
+    max-width: calc(100% - 60px);
+  }
+
+  /* Canvas — no side margins on mobile */
+  .canvas-wrap {
+    margin: 4px;
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .title-bar input.city { width: 70px; font-size: 13px; }
+  .title-bar .pop { display: none; }
+  .title-bar .pop-num-derived { display: none; }
+  .stats-chip { font-size: 11px; gap: 6px; padding: 3px 8px; }
+  .bottom-bar .tool-btn { font-size: 10px; padding: 0 6px !important; }
+}
+
 /* Print */
 @media print {
   .panel, .toolbar, .bottom-bar, .zoom-bar, .draw-style-bar { display: none !important; }
