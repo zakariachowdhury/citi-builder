@@ -46,6 +46,73 @@ function PaperDefs() {
   );
 }
 
+// ============ CONFETTI ============
+// One burst = ~36 particles flung outward from a center point, falling under
+// fake gravity via a 3-stop SMIL keyTimes path. Pure SVG, no JS per frame.
+const PARTY_COLORS = ['#e16652','#5188cc','#6aa364','#ecca6c','#9d75c2','#e89764','#e191b1','#f4a460'];
+function ConfettiBurst({ cx, cy }) {
+  // Capture the SVG's current SMIL clock value at mount so begin= matches
+  // "now" — otherwise begin defaults to 0s and the animation jumps straight
+  // to its frozen end state when the SVG clock has already moved past 2.4s.
+  const [beginAt] = useState(() => {
+    const svg = document.querySelector('svg.city-svg');
+    return svg ? svg.getCurrentTime() : 0;
+  });
+  const begin = `${beginAt.toFixed(3)}s`;
+  const particles = useMemo(() => Array.from({ length: 44 }, (_, i) => {
+    const angle = (i / 44) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+    const speed = 220 + Math.random() * 260;
+    const tx = Math.cos(angle) * speed;
+    const tyPeak = Math.sin(angle) * speed * 0.7 - 110;
+    return {
+      tx, tyPeak,
+      gx: tx * 1.15,                  // small horizontal drift after peak
+      gy: 480 + Math.random() * 160,  // fall well below origin
+      color: PARTY_COLORS[i % PARTY_COLORS.length],
+      size: 9 + Math.random() * 7,
+      rot: Math.random() * 360,
+      rotSpeed: 540 + Math.random() * 540,
+    };
+  }), []);
+  return (
+    <g transform={`translate(${cx}, ${cy})`}>
+      {particles.map((p, i) => (
+        <g key={i}>
+          <animateTransform attributeName="transform" type="translate"
+            values={`0 0; ${p.tx} ${p.tyPeak}; ${p.gx} ${p.gy}`}
+            keyTimes="0; 0.42; 1"
+            dur="2.4s" begin={begin} fill="freeze" repeatCount="1"/>
+          <rect x={-p.size/2} y={-p.size/2} width={p.size} height={p.size}
+                fill={p.color} stroke="#2a2418" strokeWidth="0.5"
+                transform={`rotate(${p.rot})`}>
+            <animateTransform attributeName="transform" type="rotate"
+              from="0" to={`${p.rotSpeed}`}
+              dur="2.4s" begin={begin} fill="freeze" repeatCount="1" additive="sum"/>
+            <animate attributeName="opacity"
+              values="1; 1; 0" keyTimes="0; 0.65; 1"
+              dur="2.4s" begin={begin} fill="freeze" repeatCount="1"/>
+          </rect>
+        </g>
+      ))}
+    </g>
+  );
+}
+function ConfettiLayer({ bursts, w, h }) {
+  if (!bursts || !bursts.length) return null;
+  return (
+    <g pointerEvents="none">
+      {bursts.map((b, idx) => {
+        // Spread multiple simultaneous bursts horizontally so they don't pile
+        // up in the same spot.
+        const offset = (idx - (bursts.length - 1) / 2) * 220;
+        return (
+          <ConfettiBurst key={b.id} cx={w / 2 + offset} cy={h * 0.62}/>
+        );
+      })}
+    </g>
+  );
+}
+
 // ============ CLOUDS ============
 // Soft hand-drawn clouds drift across the canvas in viewport space, so they
 // always glide past regardless of pan/zoom. Pure SVG <animateTransform>.
@@ -1651,6 +1718,7 @@ window.CityCanvas = function CityCanvas({
   onArmedConsumed,
   pedTarget,         // requested pedestrian count (null/undefined = default 8)
   planeTarget,       // requested plane count (null/undefined = 0)
+  confettiBursts,    // array of {id} bursts to render in viewport space
 }) {
   const svgRef = useRef(null);
   const wrapRef = useRef(null);
@@ -2369,6 +2437,7 @@ window.CityCanvas = function CityCanvas({
           })()}
         </g>
         <Weather kind={weather} w={W} h={H}/>
+        <ConfettiLayer bursts={confettiBursts} w={W} h={H}/>
       </svg>
 
       {editName && (

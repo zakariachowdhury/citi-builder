@@ -164,6 +164,7 @@ function App() {
   const [rightOpen, setRightOpen] = useStateA(false);
   const [pedTarget, setPedTarget] = useStateA(savedPref('pedTarget', 8));
   const [planeTarget, setPlaneTarget] = useStateA(savedPref('planeTarget', 2));
+  const [confettiBursts, setConfettiBursts] = useStateA([]);
   const undoStack = useRefA([]);
   const redoStack = useRefA([]);
 
@@ -453,6 +454,59 @@ function App() {
   const intersections = useMemoA(() => Geom.findIntersections(state.streets), [state.streets]);
   const rubric = useMemoA(() => Geom.checkRubric(state.streets, intersections, state.buildings),
     [state.streets, intersections, state.buildings]);
+
+  // ----- CONFETTI: fire when rubric items go from incomplete → complete. -----
+  // Mirrors the keys shown in RubricSidebar so the user gets a visual
+  // celebration aligned with the checklist.
+  const completedRubricKeys = useMemoA(() => {
+    const k = new Set();
+    if (rubric.streetsNamed) k.add('streets-named');
+    if (rubric.parallel6) k.add('parallel6');
+    if (rubric.transversal2) k.add('transversal2');
+    if (rubric.perp2) k.add('perp2');
+    if (rubric.obtuse2) k.add('obtuse2');
+    if (rubric.acute2) k.add('acute2');
+    if (rubric.hasLibrary && rubric.hasPark) k.add('lib-park');
+    if (rubric.hasSchool && rubric.hasPark) k.add('school-park');
+    if (rubric.hasGrocery) k.add('grocery');
+    if (rubric.hasMasjid) k.add('masjid');
+    if (rubric.hasPolice && rubric.hasFire) k.add('police-fire');
+    if (rubric.hasMovie && rubric.hasRestaurant) k.add('movie-rest');
+    if (rubric.hasRestaurant) k.add('rest-tx');
+    if (rubric.hasGas && rubric.hasBank) k.add('gas-bank');
+    if (rubric.hasMall) k.add('mall');
+    if (rubric.hasIcecream && rubric.hasArcade) k.add('ic-arcade');
+    if (rubric.hasPool) k.add('pool');
+    if (rubric.homes12) k.add('homes12');
+    return k;
+  }, [rubric]);
+
+  const lastRubricRef = useRefA({ projectId: null, keys: new Set() });
+  useEffectA(() => {
+    // Skip on project switch — don't celebrate items that were already met.
+    if (lastRubricRef.current.projectId !== bundle.activeId) {
+      lastRubricRef.current = { projectId: bundle.activeId, keys: completedRubricKeys };
+      return;
+    }
+    const justDone = [];
+    for (const key of completedRubricKeys) {
+      if (!lastRubricRef.current.keys.has(key)) justDone.push(key);
+    }
+    lastRubricRef.current = { projectId: bundle.activeId, keys: completedRubricKeys };
+    if (!justDone.length) return;
+    // Loading a preset can flip 5+ items at once — don't drown the user in
+    // confetti; treat that case as "preset load" and skip the burst.
+    if (justDone.length > 3) return;
+    const ts = Date.now();
+    setConfettiBursts(prev => [
+      ...prev,
+      ...justDone.map((k, i) => ({ id: `conf-${ts}-${i}-${k}`, ts })),
+    ]);
+    // Auto-clean each burst after the animation finishes (2.4s + buffer).
+    setTimeout(() => {
+      setConfettiBursts(prev => prev.filter(b => b.ts !== ts));
+    }, 2800);
+  }, [completedRubricKeys, bundle.activeId]);
 
   // Export PNG
   async function exportPNG() {
@@ -787,6 +841,7 @@ function App() {
           onArmedConsumed={() => setArmedKind(null)}
           pedTarget={pedTarget}
           planeTarget={planeTarget}
+          confettiBursts={confettiBursts}
         />
 
         {/* Title bar overlay */}
